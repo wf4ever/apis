@@ -1,0 +1,42 @@
+I'm suggesting that API documentation is TextTile-formatted, as that is:
+* a) a text format amenable to version management
+* b) somewhat compatible with the wiki markup format
+* c) convertible to HTML, and maybe other formats
+
+Possible alternatives:
+* HTML
+* Wiki markup
+* Something else?
+
+h1. API function overview
+
+@@summarize function of API, what purpose it is designed fulfill
+
+h1. API usage
+
+@@outline how API is used; e.g the sequence of resources that
+
+h1. Link relations
+
+@@describe link relations that are central to this API
+
+h1. Resources
+
+@@Identify resources that are accessed or manipulated by this API, and their possible formats
+
+h1. Resource formats
+
+@@Describe resource formats specific specific to this API
+
+h1. Cache considerations
+
+@@Note anticipated cacheability constraints on resource representations exchanged by this API
+
+h1. Security considerations
+
+@@Privacy, access control, vulnerabilities, etc.
+
+h1. References
+
+@@Links to related specifications, notes, etc.
+

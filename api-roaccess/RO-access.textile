@@ -1,0 +1,72 @@
+{color:#800080}{*}{_}Status: broad consensus on proposed approach in ARCH telecom of 2012-05-24._{*}{color}
+
+{color:#800080}{*}{_}Since then, some slight reformatting, added comments about redirecting to/from landing page (raised in telecon), and added a note about accessing RO components - how does this last point play with versioning? #g._{*}{color}
+
+{color:#800080}{*}{_}2012-05-31: Piotr announced implementation in RODL, and noted some issues with browser-based content negotiation; this highlighted the importance of also having separate URIs that don't depend on negotiation._{*}{color}
+
+{color:#800080}{*}_@@TODO: allocate proper link relation URIs{_}{*}{color}{toc}
+
+h2. How to dereference an RO?
+
+Given the URI of an RO (Research Object), what do you get on dereferencing it?  This appears to be central to the way that ROs are passed to services in RESTful service interfaces, and underpins the design of at least some Wf4Ever service interfaces.  With reference to Carole's layer cake diagram ([docs:RO-call-2011-10-19^layercake.gif]), these questions apply very much to the "geek implementation layer" or ROs.
+
+So what *is* an RO?&nbsp;According to the wiki page&nbsp;[_What is an RO?_|docs:What is an RO?][:|http://www.wf4ever-project.org/wiki/pages/viewpage.action?pageId=2065079:] "Research Objects are semantically rich aggregations of resources"
+
+So what do we expect to get when we dereference one?  What does a "semantically rich aggregation of resources" actually look like?  (Or, more precisely: what do we expect a representation the state of this aggregation to look like?)
+
+Some possibilities:
+* a copy of the packaged RO
+* a copy of the manifest
+* a landing page describing the RO
+* a directory listing of the RO top-level directory
+* a "service document" indicating URIs to use for various RO-related information (cf. [http://roy.gbiv.com/untangled/2008/rest-apis-must-be-hypertext-driven], 4th and 6th bullet points)
+
+It seems that in different circumstances we need different responses (e.g. when downloading an RO for local use, we want a copy of the content with relative URI references in the manifest; when treating the RO as linked data on the web, we want a copy of the manifest with absolute URIs; when browsing the RODL portal we want to see some kind of landing page, etc.)
+
+One possible option would be to use content-type negotiation to select among these options.  This seems to me to be reasonable for the first three options, which I think can all be considered representations of an RO, and which correspond quite naturally to content-types such as {{application/zip}}, {{application/rdf+xml}} (etc), and {{text/html}}.  The directory listing was mentioned because that's what one might get if there is no special knowledge of RO structure in the resource server - I'm inclined to disregard this as outside scope of the present discussion.
+
+The final "service document" option was mentioned as that's a technique that has been used in other situations to keep a more complex API conformant to HATEOS constraints (see above link).  It could provide a point of flexibility for accessing other RO features, but, like the manifest, it corresponds to metadata about the RO and it's not clear that it can be properly distinguished from the RO manifest by content-type alone.  I'd be inclined to suggest that if additional services are required, they would have to be made accessible via an additional service endpoint resource.  Thus, the RO manifest information could be considered as a kind of "service document" for accessing RO components and related information.
+
+h2. Proposed interface for RO dereferencing
+
+A tentative suggestion is to use content negotiation.  What one gets when dereferencing an RO depends on what kind of information is requested:
+* if asking for raw data (e.g. {{application/zip}}, {{multipart/related}}, etc.), then a copy of the entire RO data stored on the server is returned.  This would include any data that is considered to be "part of" the RO (e.g. locally-generated data files), but only references to information that is considered to be external (such as references to bioinformatics database content).  The distinction between "internal" and "external" content is quite arbitrary and is not fully defined here, other than in operational terms:  internal data is what you get when asking for a copy of the RO data.
+* if asking for something that looks like machine-processable metadata (e.g. {{application/RDF+XML}}, {{text/turtle}}, etc.) then a copy of the manifest information should be returned.  Good practice might be to do this indirectly via an HTTP 303 response so that the URI of the manifest considered as a separate resource is made visible in the process.
+* if asking for something that looks like human-readable information (e.g. {{text/html}}) then a landing page or similar might be returned.&nbsp;It has been suggested that this might be accessed indirectly via an HTTP 303 response in the same way as the manifest. &nbsp;It is also proposed that dereferencing the landing page URI requesting a non-human-readable format should redirect back to the RO and/or manifest URI, if this can be arranged. &nbsp; Alternatively the landing page might contain a link back to the main RO (and maybe to the manifest).
+
+Finally, if a URI is used that is an extension of the base URI for the RO, that would be used to access a stored component of the URI (noting that not all aggregated members of an RO are necessarily stored components). &nbsp;The effect would be as if the RO package ZIP file were unpacked into the directory designated by the RO URI.
+
+
+
+h2. Other details
+
+For clients that do not have the ability to reliably generate content negotiation information, a response to any GET or HEAD request to an RO URI might also include link headers with URIs that can be used to retrieve the three forms of information without content negotiation; e.g.
+
+{code}
+  Link: <http://example.org/myro/>                 ; rel="http://purl.example.org/ro/content"
+  Link: <http://example.org/myro/.ro/manifest.rdf> ; rel="http://purl.example.org/ro/manifest"
+  Link: <http://example.org/myro?format=html>      ; rel="http://purl.example.org/ro/page"
+{code}
+
+Assuming the default response format is HTML, the same information might also be included in HTML <link> tags:
+
+{code}
+  <head>
+     :
+    <link rel="http://purl.example.org/ro/content"  href="http://example.org/myro/">
+    <link rel="http://purl.example.org/ro/manifest" href="http://example.org/myro/.ro/manifest.rdf">
+    <link rel="http://purl.example.org/ro/page"     href="http://example.org/myro/?format=zip">
+     :
+  </head>
+{code}
+
+(cf. [http://www.rfc-editor.org/rfc/rfc5988.txt], appendix A)
+
+h2. Comparison with RO SRS
+
+This varies from the current ROSRS API ([http://www.wf4ever-project.org/wiki/display/docs/RODL+interfaces+-+ver.+5]) in the following respects:
+* Use of content negotiation to obtain different representations from a RO URI
+* Recommended default response is an  HTML landing page - currently, a different URI is used in the RODL portal for the landing page: [http://sandbox.wf4ever-project.org/portal/ro?3&ro=]<rouri>
+* Recommended use of Link header fields
+* Suggested use of <llink> elements in HTML
+* ... (something else I forgot)
