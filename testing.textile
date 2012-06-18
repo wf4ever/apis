@@ -10,5 +10,5 @@ Within the context of Wf4Ever, it is clear that different services will be imple
 
 For client test implementations, assuming that these are generally quite simple, I propose that these are implemented in Python as a unit test suite that runs against the mock implementations.  Alternatively, they could be implemented as a series of command line programs that can be invoked by a shell script, but this would lose the structure of a unit testing framework, which could be useful for quick regression testing when services are updated.
 
-All of this should to implemented with a view to continuous integration deployment via Jenins or a similar system.
+All of this should to implemented with a view to continuous integration deployment via Jenkins or a similar system.
 
