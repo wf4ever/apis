@@ -8,25 +8,30 @@ Possible alternatives:
 * Wiki markup
 * Something else?
 
+{toc}
+
+
 h1. API function overview
 
 @@summarize function of API, what purpose it is designed fulfill
 
 h1. API usage
 
-@@outline how API is used; e.g the sequence of resources that
+@@outline how API is used; e.g the sequence of operations, or example, that a client performs when invoking the API.
+
+<pre>
+<code>
+  ...
+</code>
+</pre>
 
 h1. Link relations
 
 @@describe link relations that are central to this API
 
-h1. Resources
+h1. Resources and formats
 
 @@Identify resources that are accessed or manipulated by this API, and their possible formats
-
-h1. Resource formats
-
-@@Describe resource formats specific specific to this API
 
 h1. Cache considerations
 
@@ -40,3 +45,8 @@ h1. References
 
 @@Links to related specifications, notes, etc.
 
+<pre>
+<code>
+  ...
+</code>
+</pre>
