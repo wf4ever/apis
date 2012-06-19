@@ -1,16 +1,6 @@
-I'm suggesting that API documentation is TextTile-formatted, as that is:
-* a) a text format amenable to version management
-* b) somewhat compatible with the wiki markup format
-* c) convertible to HTML, and maybe other formats
-
-Possible alternatives:
-* HTML
-* Wiki markup
-* Something else?
 @@1-2 line intro
 
 {toc}
-
 
 h1. API function overview
 
@@ -20,11 +10,9 @@ h1. API usage
 
 @@outline how API is used; e.g the sequence of operations, or example, that a client performs when invoking the API.
 
-<pre>
-<code>
+{code}
   ...
-</code>
-</pre>
+{code}
 
 h1. Link relations
 
@@ -46,8 +34,3 @@ h1. References
 
 @@Links to related specifications, notes, etc.
 
-<pre>
-<code>
-  ...
-</code>
-</pre>
