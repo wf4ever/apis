@@ -1,175 +1,176 @@
+API for checklist evaluation.
 
-{toc:minLevel=2}
-
-h1. API for checklist evaluation
-
-See also:
-* [docs:Integrity and Authenticity component] \- has early discussions of API function and design
-* [RODL interfaces - ver. 5|RO SRS REST interface - ver. 5]
-* [Research Objects Digital Library (including the ROSRS)|docs:Research Objects Digital Library (including the ROSRS)]
-* [docs:RO dereferencing]
-
-TODO:
-
-* Select URI base for relation types in service document
+{toc}
 
 
-h2. Command-line equivalent function
+h1. API function overview
+
+The checklist evaluation API is intended to provide access to the minim-based evaluation of Research Objects, used to test for completeness, executability, repeatability and other desired features.  The functionality provided is based on the {{ro-manager}} {{evaluate checklist}} option:
 
 {code}
-ro evaluate checklist [ -d <dir> ] [ -a | -l <level> ] <minim> <purpose> [ <target> ]
+  ro evaluate checklist [ -d <dir> ] [ -a | -l <level> ] <minim> <purpose> [ <target> ]
 {code}
+
 where:
-* <dir> is the directory containing the RO to be evaluated
-* <level> indicates the level of information detail to be returned
-* <minim> is a URI reference for a minimum information model resource from which the checklist definition is obtained
-* <target> is a target resource with respect to which the evaluation is performed; the default <target> is the RO itself, but a component within the RO may be selected.
-* <purpose> is a keyword indicating the purpose for which the RO or <target> is to be evaluated.
+
+* {{<dir>}} is the directory containing the RO to be evaluated
+* {{<level>}} indicates the level of information detail to be returned
+* {{<minim>}} is a URI reference for a minimum information model resource from which the checklist definition is obtained
+* {{<target>}} is a target resource with respect to which the evaluation is performed; the default {{<target>}} is the RO itself, but a component within the RO may be selected.
+* {{<purpose>}} is a keyword indicating the purpose for which the RO or {{<target>}} is to be evaluated.
 
 For example:
 {code}
-ro evaluate checklist -d /workspace/myro -l all /workspace/minim.rdf "creation" myro/wfoutput.dat
+  ro evaluate checklist -d /workspace/myro -l all /workspace/minim.rdf "creation" myro/wfoutput.dat
 {code}
-might evaluate the RO at /workspace/myro using the minim model in file /workspace/minim.rdf
+might evaluate the RO at {{/workspace/myro}} using the minim model in file {{/workspace/minim.rdf}}.
 
-See:
-* [https://github.com/wf4ever/ro-manager/tree/master/doc]
-* [https://github.com/wf4ever/ro-manager/tree/master/src/iaeval/Minim]
-* [https://github.com/wf4ever/ro-catalogue/blob/master/v0.1/simple-requirements/simple-requirements-minim.rdf] (minim example)
-* [http://www.wf4ever-project.org/wiki/display/docs/RO+decay+detection+using+checklists] (more examples of individual minim requirements)
-
-h2. Web API
-
-The Web API is intended to provide remote access to the above functionality using a simple HTTP request.
+The Web API is intended to provide remote access to the above functionality using simple HTTP requests.
 
 Research Objects and other data are provided as web resources, and indicated in the API using their URIs.
 
-h3. Example
+
+h1. API usage
 
 Suppose we have:
-* A checklist evaluation service accessible at <[http://service.example.org/evaluate/checklist]>
-* An RO with URI <[http://sandbox.example.org/ROs/myro]>
-* A MINIM minimum information model description (containing checklist definitions including one for repeatability) at <[http://another.example.com/minim/repeatable.rdf]>
+* A checklist evaluation service accessible at {{<http://service.example.org/evaluate/checklist>}}
+* An RO with URI {{<http://sandbox.example.org/ROs/myro>}}
+* A MINIM minimum information model description (containing checklist definitions including one for repeatability) at {{<http://another.example.com/minim/repeatable.rdf>}}
 * The checklist definition in the MINIM model for repeatability is associated with the purpose keyword "repeatable".
 
 Note: there is an example of a simple minim model at [https://github.com/wf4ever/ro-catalogue/blob/master/v0.1/simple-requirements/simple-requirements-minim.rdf]
 
-A sequence of HTTP operations using the checklist service interface might then look like this:
+The checklist evaluation would then be invoked in a sequence of two HTTP operations:
 
 # Client retrieves service document:
 {code}
-C: GET /evaluate/checklist HTTP/1.1
-C: Host: service.example.org
-C: Accept: application/rdf+xml
+  C: GET /evaluate/checklist HTTP/1.1
+  C: Host: service.example.org
+  C: Accept: application/rdf+xml
 
-S: HTTP/1.1 200 OK
-S: Content-Type: application/rdf+xml
-S:
-S: <?xml version="1.0"?>
-S: <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-S:   xmlns:roe="http://purl.org/ro/service/evaluate/">
-S:   <rdf:Description rdf:about="">
-S:     <roe:checklist>/evaluate/checklist{?RO,minim,target,purpose}</roe:checklist>
-S:   </rdf:Description>
-S: </rdf:RDF>
+  S: HTTP/1.1 200 OK
+  S: Content-Type: application/rdf+xml
+  S:
+  S: <?xml version="1.0"?>
+  S: <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  S:   xmlns:roe="http://purl.org/ro/service/evaluate/">
+  S:   <rdf:Description rdf:about="">
+  S:     <roe:checklist>/evaluate/checklist{?RO,minim,target,purpose}</roe:checklist>
+  S:   </rdf:Description>
+  S: </rdf:RDF>
 {code}
-# Client parses the service document, extracts the URI template for the checklist evaluation service and assembles URI for the desired evaluation result (cf. RFC6570), and issues a new HTTP GET request:
+# Client parses the service document, extracts the URI template for the checklist evaluation service and assembles URI for the desired evaluation result (cf. RFC6570), and issues a second HTTP GET request:
 {code}
-C: GET /evaluate/checklist?RO=http%3A%2F%2Fsandbox.example.org%2FROs%2Fmyro
-         &minim=http%3A%2F%2Fanother.example.com%2Fminim%2Frepeatable.rdf
-         &purpose=repeatable HTTP/1.1
-C: Host: service.example.org
-C: Accept: application/rdf+xml
+  C: GET /evaluate/checklist?RO=http%3A%2F%2Fsandbox.example.org%2FROs%2Fmyro
+           &minim=http%3A%2F%2Fanother.example.com%2Fminim%2Frepeatable.rdf
+           &purpose=repeatable HTTP/1.1
+  C: Host: service.example.org
+  C: Accept: application/rdf+xml
 
-S: HTTP/1.1 200 OK
-S: Content-Type: application/rdf+xml
-S:
-S: <?xml version="1.0"?>
-S: <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-S:   xmlns:...="..."
-S:   >
-S:   <rdf:Description rdf:about="...">
-S:     (Result of checklist evaluation @@detailsTBD)
-S:   </rdf:Description>
-S: </rdf:RDF>
+  S: HTTP/1.1 200 OK
+  S: Content-Type: application/rdf+xml
+  S:
+  S: <?xml version="1.0"?>
+  S: <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+  S:   xmlns:...="..."
+  S:   >
+  S:   <rdf:Description rdf:about="...">
+  S:     (Result of checklist evaluation)
+  S:   </rdf:Description>
+  S: </rdf:RDF>
 {code}
 
-That's it.  The result from the second request is the checklist evaluation.  The URI shown above has been split over several lines for readability - the actual HTTP request must present it without whitespace. The optional target URI parameter has been omitted in this example on the assumption that the target is the RO itself.
+The result from the second request is the checklist evaluation result.  The URI shown above has been split over several lines for readability - the actual HTTP request must present it without whitespace. The optional target URI parameter has been omitted in this example on the assumption that the target is the Research Object itself.
 
-References:
+See also:
 * [http://tools.ietf.org/html/rfc2616]
 * [http://tools.ietf.org/html/rfc3986]
 * [http://tools.ietf.org/html/rfc6570]
 * [https://github.com/wf4ever/ro-manager/blob/master/src/iaeval/Minim/minim.rdf]
 
-h3. Resources
 
-h4. RO Service description
+h1. Link relations
 
-The RO service description is an RDF file that contains URI templates for accessing RO related services.
+h2. <http://purl.org/ro/service/evaluate/checklist>
+
+This relation is generally used used in the service description document
+
+It indicates a relation between a service description and a URI template for RO evaluation results using the described service.  The URI template is is used to construct a service result URI by:
+# applying the URI template expansion procedures with caller-supplied RO URI, minim URI, purpose and target URIs, and
+# resolving the resulting URI-reference to an absolute URI using normal URI resolution rules (e.g. typically, using the service document URI as a base URI)
+
+See also:
+* [http://tools.ietf.org/html/rfc6570]
+* [http://tools.ietf.org/html/rfc3986]
+
+
+h1. HTTP methods
+
+The service description is obtained in response to an HTTP GET to a checklist evaluation service URI.
+
+The checklist evaluation service responds to an HTTP GET with the results of a checklist evaluation, using the URI defined by expanding the template provided by the service description.
+
+
+h1. Resources and formats
+
+h2. Service description
+
+The checklist evaluation service description is an RDF file that contains URI templates for accessing RO related services, including checklist evaluation.  The RDF syntax used may be content negotiated.  In the absence of content negotiation, RDF/XML should be returned.
 
 Example:
 {code}
-    <?xml version="1.0"?>
-    <rdf:RDF
-      xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-      xmlns:roe="http://purl.org/ro/service/evaluate/"
-      >
-      <rdf:Description rdf:about="">
-        <roe:checklist>/evaluate/checklist{?RO,minim,target,purpose}</roe:checklist>
-      </rdf:Description>
-    </rdf:RDF>
+<?xml version="1.0"?>
+  <rdf:RDF
+    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+    xmlns:roe="http://purl.org/ro/service/evaluate/"
+    >
+    <rdf:Description rdf:about="">
+      <roe:checklist>/evaluate/checklist{?RO,minim,target,purpose}</roe:checklist>
+    </rdf:Description>
+  </rdf:RDF>
 {code}
 
-See:
-* [http://tools.ietf.org/html/rfc6570]
-
-h4. Research Object
+h2. Research Object
 
 See:
+* [http://www.wf4ever-project.org/wiki/display/docs/RO+model]
+* [http://www.wf4ever-project.org/wiki/display/docs/Research+Object+Vocabulary+Specification]
+* [http://www.wf4ever-project.org/wiki/display/docs/Research+Object+model]
 
-* [docs:RO model]
-* [docs:Research Object Vocabulary Specification]
-* [docs:Research Object model]
-
-h4. Minim description
+h2. Minim description
 
 The MINIM description contains 3 levels of description:
 
-# "minim:Constraint" map a target+purpose (e.g. runnable RO) to a minim:Model
+# {{minim:Constraint}} associates a target and purpose (e.g. runnable RO) to a {{minim:Model}}
 to be evaluated.
-# "minim:Model" encodes the checklist (list of requirements) to be evaluated.
+# {{minim:Model}} encodes the checklist (list of requirements) to be evaluated.
 (There is provision for MUST / SHOULD / MAY requirements in a checklist to
 cater for limited variation in levels of conformance.)
-# "minim:Requirement" is a rule for evaluating a single requirement as being
-satisfied or not satisfied. Each rule makes reference to what I have called a
-"checklist primitive" function. I propose that additional capabilities can be
-added (in due course) by expanding the set of available checklist primitives;
-e.g. see [http://www.wf4ever-project.org/wiki/display/docs/RO+decay+detection+using+checklists]
+# {{minim:Requirement}} is a single requirement (checklist item), which is associated with a rule for evaluating whether or not it is satisfied or not satisfied. Each rule makes reference to a "checklist primitive" function.  Additional capabilities can be added (in due course) by expanding the set of available checklist primitives (e.g. see [http://www.wf4ever-project.org/wiki/display/docs/RO+decay+detection+using+checklists])
 
-These are called out in the examples that follow
+These 3 levels are called out in the examples that follow
 
 See:
 * [https://github.com/wf4ever/ro-manager/blob/master/src/iaeval/Minim/minim.rdf]
 * [https://github.com/wf4ever/ro-catalogue/blob/master/v0.1/simple-requirements/simple-requirements-minim.rdf]
 * [http://www.wf4ever-project.org/wiki/display/docs/RO+Examples]
 
-h5. Minim Constraint
+h3. Minim Constraint
 
-The "constraint" provides the basis for mapping from target+purpose values to a particular {{minim:Model}} to be used as the basis of an evaluation. Relative URI references are resolved relative to the location of the Minim resource.  In this case, the Minim resource is in the root directory of an RO, so "." refers to the RO itself.
+The "constraint" provides the basis for mapping from target and purpose values to a particular {{minim:Model}} to be used as the basis of an evaluation. Relative URI references are resolved relative to the location of the Minim resource.  In this example, the Minim resource is taken from the root directory of an RO, so "." refers to the RO itself.
 
 {code}
- <minim:Constraint rdf:about="#runnable_RO">
+  <minim:Constraint rdf:about="#runnable_RO">
     <minim:forPurpose>Runnable</minim:forPurpose>
     <minim:onResource rdf:resource="." />
     <minim:toModel rdf:resource="#runnable_RO_model" />
     <rdfs:comment>
       Constraint to be satisfied if the RO is to be runnable
     </rdfs:comment>
-  </minim:Constraint>
+  </minim:Constraint>
 {code}
 
-h5. Minim Model (checklist)
+h3. Minim Model (checklist)
 
 A minim model represents a checklist to be evaluated.  It enumerates of a number of requirements which may be declared at levels of MUST, SHOULD or MAY be satisfied for the model as a whole to be considered satisfied.  This follows a structure for minimum information models proposed by Matthew Gamble.
 
@@ -187,11 +188,11 @@ A minim model represents a checklist to be evaluated.  It enumerates of a number
   </minim:Model>
 {code}
 
-h5. Minim Requirements
+h3. Minim Requirements
 
 Minim Requirements are evaluated using rules, which in turn invoke checklist evaluation primitives with appropriate parameters.  This structure allows a relatively wide range of checklist items to be evaluated based on a relatively small number of primitive tests.  The examples show the various primitives.
 
-*Requirement for an RO to contain a workflow primitive*
+h4. Requirement for an RO to contain a workflow primitive
 
 The {{minim:ContentMatchRequirementRule}} is driven by a SPARQL query probe which is evaluated over a merge of all the RO annotations (including the RO manifest).  In this case, it simply tests that the query can be satisfied.  The {{minim:showpass}} and {{minim:showfail}} properties indicate strings that are used for reporting the status of the checklist evaluation.
 
@@ -211,7 +212,7 @@ The {{minim:ContentMatchRequirementRule}} is driven by a SPARQL query probe whic
   </minim:Requirement>
 {code}
 
-*Requirement for workflow output files to be present*
+h4. Requirement for workflow output files to be present
 
 This use of a {{minim:ContentMatchRequirementRule}} uses the SPARQL query as a probe to find all workflow output files mentioned according to the wfdesc description vocabulary, and for each of these tests that the indicated resource is indeed aggregated by the RO (a weak notion of being "present" in the RO).  The URI of the required aggregated resource is constructed using a URI template ([http://tools.ietf.org/html/rfc6570]) with query result values.  The diagnostic messages can interpolate query result values, as in the case of {{minim:showfail}} in this example.
 
@@ -233,9 +234,9 @@ This use of a {{minim:ContentMatchRequirementRule}} uses the SPARQL query as a p
   </minim:Requirement>
 {code}
 
-*Software environment testing*
+h4. Software environment testing
 
-A {{minim:SoftwareEnvironmentRule}} tests to see if a particular piece of software is available by issuing a command and checking the response against a supplied regular expression.  (This test is primarily intended for local use within RO-manager, and may be of limited use on the evaluationb service as the command is issued on the host running the evaluation service, not on the host requesting the service.)
+A {{minim:SoftwareEnvironmentRule}} tests to see if a particular piece of software is available by issuing a command and checking the response against a supplied regular expression.  (This test is primarily intended for local use within RO-manager, and may be of limited use on the evaluation service as the command is issued on the host running the evaluation service, not on the host requesting the service.)
 
 {code}
   <!-- Environment needs python -->
@@ -251,70 +252,7 @@ A {{minim:SoftwareEnvironmentRule}} tests to see if a particular piece of softwa
   </minim:Requirement>
 {code}
 
-h4. Evaluation  results
-
-Evaluation results are an RDF or JSON file containing a fully detailed description of the results of a checklist evaluation.  RDF results are reported using the Minim vocabulary and requirement URIs, together with additional terms to include diagnostic and summary information.
-
-Example of RDF (Turtle syntax here):
-{code}
-PREFIX rdf:        <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-PREFIX spin:       <http://spinrdf.org/sp#>
-PREFIX result:     <http://www.w3.org/2001/sw/DataAccess/tests/result-set#>
-PREFIX minim:      <http://purl.org/minim/minim#>
-<http://sandbox.example.org/ROs/myro>
-  minim:testedConstraint   <http://another.example.com/minim/repeatable.rdf#runnable-RO-constraint> ;
-  minim:testedPurpose      "Runnable" ;
-  minim:testedTarget       <http://sandbox.example.org/ROs/myro> ;
-  minim:fullySatisfies     <http://another.example.com/minim/repeatable.rdf#runnable-RO-checklist> ;
-  minim:nominallySatisfies <http://another.example.com/minim/repeatable.rdf#runnable-RO-checklist> ;
-  minim:minimallySatisfies <http://another.example.com/minim/repeatable.rdf#runnable-RO-checklist> ;
-  # minim:missingMust      ... (none)
-  # minim:missingShould    ... (none)
-  # minim:missingMay       ... (none)
-  minim:satisfied
-    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#environment-software/lpod-show> ],
-    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#environment-software/python> ],
-    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#isPresent/workflow-instance>],
-    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#isPresent/workflow-inputfiles> ;
-      result:binding [ result:variable "wf" ; result:value "http://sandbox.example.org/ROs/myro/docs/mkjson.sh" ],
-      result:binding [ result:variable "wi" ; result:value "GZZzLCkR38" ],
-      result:binding [ result:variable "if" ; result:value "http://sandbox.example.org/ROs/myro/data/UserRequirements-gen.ods" ]
-    ] .
-{code}
-
-These are mainly terms from the current MINIM vocabulary, with a few new ones added to provide more detailed diagnostic information about the evaluation result:
-* {{minim:testedConstraint}} is the URI of the constraint
-* {{minim:testedTarget}} is the URI of the target of the constraint
-* {{minim:testedPurpose}} is the URI of the constraint
-* {{minim:missingMust}} refers to a minim:hasMustRequirement rule for the model used that is not satisfied by the RO with corresponding variable bindings where appropriate
-* {{minim:missingShould}} refers to a minim:hasShouldRequirement rule for the model used that is not satisfied by the RO, with corresponding variable bindings where appropriate
-* {{minim:missingMay}} refers to a minim:hasMayRequirement rule for the model used that is not satisfied by the RO, with corresponding variable bindings where appropriate
-* {{minim:satisfied}} refers to a rule that is satisfied by the RO,  with corresponding variable bindings where appropriate
-* {{minim:tryRule}} object is URI of a rule in the MINIM model.
-
-URIs that that appear as object values above are references to elements of the MINIM model tested, and are defined in the minim description resource.
-
-@@TODO JSON format for results TBD; proposed to use something like a JSON-LD rendering of the RDF.
-
-h3. Relations
-
-h4. [http://purl.org/ro/service/evaluate/] @@TBD
-
-This relation is generally used used in the service description document
-
-It indicates a relation between a service description and a URI template for RO evaluation results using the described service.  The URI template is is used to construct a service result URI by:
-# applying the URI template expansion procedures with caller-supplied RO URI, minim URI, purpose and target URIs, and
-# resolving the resulting URI-reference to an absolute URI using normal URI resolution rules (e.g. typically, using the service document URI as a base URI)
-
-See:
-* [http://tools.ietf.org/html/rfc6570]
-* [http://tools.ietf.org/html/rfc3986]
-
-h3. HTTP methods
-
-The service responds to an HTTP GET with the results of a checklist evaluation, using the URI defined by expanding the template provided by the [http://purl.org/ro/service/evaluate/] relation in the service description.
-
-h2. Proposed Minim enhancements
+h3. Proposed Minim enhancements
 
 In viewing the proposals for liveness and integrity testing, compare with the current framework used for testing that an RO aggregates a specified resource; the following rule example tests that all workflow inputs are aggregated by the evaluated RO:
 
@@ -329,7 +267,7 @@ In viewing the proposals for liveness and integrity testing, compare with the cu
   </minim:ContentMatchRequirementRule>
 {code}
 
-h3. Liveness testing
+h4. Liveness testing
 
 To test for liveness of a resource, the evaluator will need to attempt to access the resource.  If it is a local file, a file existence check should suffice.  If it is a web resource, then a success response to an HTTP HEAD request is expected.
 
@@ -346,7 +284,7 @@ To test for liveness of a resource, the evaluator will need to attempt to access
 
 This varies from the simple aggregation test in that the {{minim::aggregatesTemplate}} property is replaced by a {{minim:accessTemplate}} property.
 
-h3. Integrity testing
+h4. Integrity testing
 
 In this context, "integrity testing" means checking that a resource content matches some expected (e.g. previously calculated) value.
 
@@ -367,7 +305,7 @@ This structure assumes that appropriate annotations have been created to allow a
   </minim:ContentMatchRequirementRule>
 {code}
 
-h3. Resource annotation with checksum values
+h4. Resource annotation with checksum values
 
 Integrity checking with a single RO may be achieved by adding checksum annotations to the resources that subsequently will be tested.  A new RO-manager command could be provided to facilitate creation of such annotations; e.g.
 
@@ -387,12 +325,12 @@ This flexible approach would allow a checksum to be calculated from one RO and a
   ro annotate-hash _resource1_ roeval:contentMatch _resource2_
 {code}
 
-where {{{_}resource1{_}}} would be annotated with the content hash of {{{_}resource2{_}}}, using the indicated attribute identifier.
+where {{_resource1_}} would be annotated with the content hash of {{_resource2_}}, using the indicated attribute identifier.
 
 
-h3. Comparing with a reference object or resource
+h4. Comparing with a reference object or resource
 
-A proposed requirement is that contents of one RO can be compared with the content of another \_calibration\_ (or \_reference_) RO.
+A proposed requirement is that contents of one RO can be compared with the content of another _calibration_ (or _reference_) RO.
 
 This might be achieved by adding an annotation to an RO referring to its corresponding calibration RO. It is expected that this information might be provided by RO evolution information, but in the absence of such annotations a new, specialized annotation might be needed for this.
 
@@ -404,7 +342,7 @@ Operationally, the comparison between ROs might be invoked in any of the followi
 
 @@TODO - define how to handle this.  We need a clearer view of the use-cases to best understand which approach(es) would be most appropriate.
 
-h3. Constraint references to RO and target resources
+h4. Constraint references to RO and target resources
 
 Currently, the mechanisms used for defining {{minim:Constraint}} values contain references to the RO, which makes it difficult to use the same Minim resource with multiple ROs.
 
@@ -439,4 +377,98 @@ Thus, the above example might become:
     </rdfs:comment>
   </minim:Constraint>
 {code}
-A further development might allow an additional SPARQL query to be used, which is executed against a merge of the RO annotations resultingin additional variable bindings that can be referenced by the target resource template. Such might be used, for example, to locate a workflow template within the RO that uses a particular global database, which in turn might be used to test that the corresponding provenance record indicates use of an up-to-date version of that database.
+
+A further development might allow an additional SPARQL query to be used, which is executed against a merge of the RO annotations resulting in additional variable bindings that can be referenced by the target resource template. Such might be used, for example, to locate a workflow template within the RO that uses a particular global database, which in turn might be used to test that the corresponding provenance record indicates use of an up-to-date version of that database.
+
+
+h2. Checklist evaluation results
+
+Evaluation results are an RDF or JSON file containing a fully detailed description of the results of a checklist evaluation.  RDF results are reported using the Minim vocabulary and requirement URIs, together with additional terms to include diagnostic and summary information.
+
+Example of RDF (Turtle syntax here):
+
+{code}
+PREFIX rdf:        <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX spin:       <http://spinrdf.org/sp#>
+PREFIX result:     <http://www.w3.org/2001/sw/DataAccess/tests/result-set#>
+PREFIX minim:      <http://purl.org/minim/minim#>
+<http://sandbox.example.org/ROs/myro>
+  minim:testedConstraint   <http://another.example.com/minim/repeatable.rdf#runnable-RO-constraint> ;
+  minim:testedPurpose      "Runnable" ;
+  minim:testedTarget       <http://sandbox.example.org/ROs/myro> ;
+  minim:fullySatisfies     <http://another.example.com/minim/repeatable.rdf#runnable-RO-checklist> ;
+  minim:nominallySatisfies <http://another.example.com/minim/repeatable.rdf#runnable-RO-checklist> ;
+  minim:minimallySatisfies <http://another.example.com/minim/repeatable.rdf#runnable-RO-checklist> ;
+  # minim:missingMust      ... (none)
+  # minim:missingShould    ... (none)
+  # minim:missingMay       ... (none)
+  minim:satisfied
+    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#environment-software/lpod-show> ],
+    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#environment-software/python> ],
+    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#isPresent/workflow-instance>],
+    [ minim:tryRule <http://another.example.com/minim/repeatable.rdf#isPresent/workflow-inputfiles> ;
+      result:binding [ result:variable "wf" ; result:value "http://sandbox.example.org/ROs/myro/docs/mkjson.sh" ],
+      result:binding [ result:variable "wi" ; result:value "GZZzLCkR38" ],
+      result:binding [ result:variable "if" ; result:value "http://sandbox.example.org/ROs/myro/data/UserRequirements-gen.ods" ]
+    ] .
+{code}
+
+These are mainly terms from the current MINIM vocabulary, with a few new ones added to provide more detailed diagnostic information about the evaluation result:
+* {{minim:testedConstraint}} is the URI of the constraint
+* {{minim:testedTarget}} is the URI of the target of the constraint
+* {{minim:testedPurpose}} is the URI of the constraint
+* {{minim:missingMust}} refers to a {{minim:hasMustRequirement}} rule for the model used that is not satisfied by the RO with corresponding variable bindings where appropriate
+* {{minim:missingShould}} refers to a {{minim:hasShouldRequirement}} rule for the model used that is not satisfied by the RO, with corresponding variable bindings where appropriate
+* {{minim:missingMay}} refers to a {{minim:hasMayRequirement}} rule for the model used that is not satisfied by the RO, with corresponding variable bindings where appropriate
+* {{minim:satisfied}} refers to a rule that is satisfied by the RO,  with corresponding variable bindings where appropriate
+* {{minim:tryRule}} object is URI of a rule in the MINIM model.
+
+URIs that that appear as object values above are references to elements of the MINIM model tested, and are defined in the minim description resource.  It is proposed that the result graph should also include the original minim description, so that all information needed for checklist reporting is obtainable from the result returned.
+
+@@TODO JSON format for results TBD; proposed to use something like a JSON-LD rendering of the RDF.
+
+
+h1. Cache considerations
+
+Effective (and correct) cacheing of checklist evaluation results is desirable, as this could prevent unnecessary recalculation of results that have already been calculated.  But care is needed to avoid incorrect cacheing which could result in incorrect results being returned.
+
+The result of a checklist evaluation should be cacheable, subject to cacheability of the evaluation service document, the minim description and the RO that is evaluated. The service should return cache-control headers on the evaluation result that require re-evaluation when the criteria for cacheing the various resources used are no longer satisfied (e.g. {{Cache-Control: max-age}} values returned should no greater than the minimum of the values associated with all resources used).
+
+Also note any {{Vary:}} headers or other {{Cache-control:}} values that are returned: if the corresponding headers are derived from client-supplied header field values, the checklist evaluation response should indicate this.
+
+@@Any other potential gotchas here?
+
+See also:
+* [http://www.mnot.net/cache_docs/]
+
+
+h1. Security considerations
+
+Checklist evaluation is a read-only function, so there is no obvious risk of unintended data modification.
+
+Checklist evaluation results may expose information about the content of a Research Object.  As a general rule, the results of a checklist evaluation should be provided only to agents who themselves have permission to access the RO contents.  Mechanisms for implementing such access control are not described here.
+
+See also: [@@ref Wf4Ever access control mechanisms]
+
+
+h1. References
+
+* [http://tools.ietf.org/html/rfc2616]
+* [http://tools.ietf.org/html/rfc3986]
+* [http://tools.ietf.org/html/rfc6570]
+* [http://www.wf4ever-project.org/wiki/display/docs/RO+model]
+* [http://www.wf4ever-project.org/wiki/display/docs/Research+Object+Vocabulary+Specification]
+* [http://www.wf4ever-project.org/wiki/display/docs/Research+Object+model]
+* [https://github.com/wf4ever/ro-manager/blob/master/src/iaeval/Minim/minim.rdf] (currently requires Wf4Ever github log-in)
+* [http://www.mnot.net/cache_docs/]
+
+See also:
+* [http://www.wf4ever-project.org/wiki/display/docs/Integrity+and+Authenticity+component]
+* [http://www.wf4ever-project.org/wiki/display/docs/RO+SRS+REST+interface+-+ver.+5]
+* [http://www.wf4ever-project.org/wiki/display/docs/Research+Objects+Digital+Library+%28including+the+ROSRS%29]
+* [http://www.wf4ever-project.org/wiki/display/docs/RO+dereferencing]
+* [...]
+
+{code}
+{code}
+

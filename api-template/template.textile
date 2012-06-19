@@ -46,8 +46,12 @@ h1. References
 
 @@Links to related specifications, notes, etc.
 
-<pre>
-<code>
-  ...
-</code>
-</pre>
+
+<pre><code>
+  (code)
+</code></pre>
+
+some @inline code@ here
+
+Link to "$":http://example.org/ here
+Link to "example.org":http://example.org/ here
