@@ -68,7 +68,19 @@ class ROSRS_Session(object):
     def error(self, msg, value):
         return ROSRS_Error(msg=msg, value=value, srsuri=self._srsuri)
 
-    def doRequest(self, uripath, method="GET", body=None, accept=None, reqheaders=None):
+    def parseLinks(headers):
+        """
+        Parse link header(s), return dictionary of links keyed by link relation type
+        """
+        linkvallist = [ v for (h,v) in headers["_headerlist"] if h == "link" ]
+        links = {}
+        for linkval in linkvallist:
+            linkmatch = re.match(r'''\s*<([^>]*)>\s*;\s*rel\s*=\s*"([^"]*)"''', linkval)
+            if linkmatch:
+                links[linkmatch.group(2)] = rdflib.URIRef(linkmatch.group(1))
+        return links
+
+    def doRequest(self, uripath, method="GET", body=None, ctype=None, accept=None, reqheaders=None):
         """
         Perform HTTP request to ROSRS
         Return status, reason(text), response headers, response body
@@ -94,6 +106,8 @@ class ROSRS_Session(object):
         if not reqheaders:
             reqheaders = {}
         reqheaders["authorization"] = "Bearer "+self._key
+        if ctype:
+            reqheaders["content-type"] = ctype
         if accept:
             reqheaders["accept"] = accept
         # Execute request
@@ -102,12 +116,13 @@ class ROSRS_Session(object):
         response = self._httpcon.getresponse()
         status   = response.status
         reason   = response.reason
-        # Note: dict(...) keeps last result of multiple headers
-        headers  = dict([ (h.lower(),v)) for (h,v) in response.getheaders() ])
-        data     = response.read()
+        headerlist = [ (h.lower(),v)) for (h,v) in response.getheaders() ]
+        headers  = dict(headerlist)   # dict(...) keeps last result of multiple keys
+        headers["_headerlist"] = headerlist
+        data = response.read()
         return (status, reason, headers, data)
 
-    def doRequestRDF(self, uripath, method="GET", body=None, headers=None):
+    def doRequestRDF(self, uripath, method="GET", body=None, ctype=None, headers=None):
         """
         Perform HTTP request with RDF response.
         If requests succeeds, return response as RDF graph,
@@ -117,7 +132,7 @@ class ROSRS_Session(object):
         """
         (status, reason, headers, data) = self.rosrs.doRequest(uripath,
             method=method, body=body,
-            accept="application/rdf+xml", headers=headers)
+            ctype=ctype, accept="application/rdf+xml", headers=headers)
         if status >= 200 and status < 300:
             if headers["content-type"].lower() == "application/rdf+xml":
                 rdfgraph = rdflib.Graph()
@@ -196,6 +211,23 @@ class ROSRS_Session(object):
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO manifest", "%d03 %s"%(status, reason))
 
+    def getROResource(self, resuriref, rouri=None, accept=None, reqheaders=None):
+        """
+        Retrieve resource from RO
+        """
+        if rouri:
+            resuri = urlparse.urljoin(rouri, resuriref)
+        else:
+            resuri = resuriref
+        (status, reason, headers, data) = self.doRequest(resuri,
+            method="GET", accept=accept, reqheaders=reqheaders)
+        if status in [200, 404]:
+            return (status, reason, headers, data if status == 200 else None)
+        raise self.error("Error retrieving RO manifest", "%d03 %s"%(status, reason))
+
+    def aggregateResourceInt(rouri, ctype="application/octet-stream", body=None):
+        # @@TODO: create internal resource - use code from long-form test case when passes
+        return (status, reason, proxyuri, resuri)
 
 
 # Test cases
@@ -345,22 +377,78 @@ class TestApi_ROSRS(unittest.TestCase):
 
     def testAggregateResourceExt(self):
         # Aggegate external resource: POST proxy
+        assert False, "@@TODO - when internal test passes, hack code"
         return
 
     def testAggregateResourceIntFull(self):
-        # Aggegate internal resource (full form): POST proxy, then PUT content
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Aggegate internal resource: POST proxy ...
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="POST", ctype="application/vnd.wf4ever.proxy")
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        proxyuri = rdflib.URURef(headers["location"])
+        links    = self.rosrs.parseLinks(headers)
+        resuri   = links[str(ORE.proxyFor)]
+        # ... then PUT content
+        rescontent = "Resource content\n"
+        (status, reason, headers, data) = self.rosrs.doRequest(resuri,
+            method="PUT", ctype="text/plain", body=rescontent)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        self.assertEqual(headers["location"], str(resuri))
+        ####links    = self.rosrs.parseLinks(headers)
+        ####self.assertEqual(links[str(ORE.proxy)], str(resuri))
+        # Read manifest and check aggregated resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertIn( (rouri, ORE.aggregates, resuri), manifest )
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
         return
 
     def testAggregateResourceShort(self):
         # Aggegate internal resource (shortcut): POST content
+        assert False, "@@TODO - when long-form test passes, hack code"
         return
 
     def testDeleteResourceExt(self):
         # De-aggregate external resource: find proxy URI, DELETE proxy
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Create test resource
+        rescontent = "Resource content\n"
+        (status, reason, proxyuri, resuri) = self.rosrs.aggregateResourceInt(rouri, ctype="text/plain", body=rescontent)
+        self.assertEqual(status, 200)
+        # Find proxy for resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        resp = manifest.query("SELECT ?p WHERE { ?p <%(proxyin)s> <%(rouri)s> ; <%(proxyfor)s> <%(resuri)s> .")
+        proxyterms = [ b["p"] for b in resp.bindings ]
+        self.assertEqual(len(proxyterms), 1)
+        proxyuri = proxyterms[0]
+        self.assertIsInstancel(proxyuri, rdflib.URIRef)
+        # Delete proxy
+        (status, reason, headers, data) = self.rosrs.doRequest(proxyuri,
+            method="DELETE")
+        self.assertEqual(status, 204)
+        self.assertEqual(reason, "No content")
+        # Check that resource is no longer available
+        (status, reason, headers, data) = self.rosrs.getROResource(uri)
+        self.assertEqual(status, 404)
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
         return
 
     def testDeleteResourceInt(self):
         # De-aggregate internal resource: find proxy URI, DELETE proxy, redirect
+        # @@ Discussing whether to not do redirect.
         return
 
     def testCreateAnnotation(self):
