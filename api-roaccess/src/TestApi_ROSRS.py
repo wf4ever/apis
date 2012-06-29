@@ -73,7 +73,8 @@ class ROSRS_Session(object):
         Perform HTTP request to ROSRS
         Return status, reason(text), response headers, response body
         """
-        # Sort out path to use in HTTP request: request may be path or full URI
+        # Sort out path to use in HTTP request: request may be path or full URI or rdflib.URIRef
+        uripath = str(uripath)        # get URI string from rdflib.URIRef
         uriparts = urlparse.urlsplit(urlparse.urljoin(self._srspath,uripath))
         if uriparts.scheme:
             if self._srsscheme != uriparts.scheme:
@@ -101,7 +102,8 @@ class ROSRS_Session(object):
         response = self._httpcon.getresponse()
         status   = response.status
         reason   = response.reason
-        headers  = dict(response.getheaders())  # Keeps last occurrence of multiple headers
+        # Note: dict(...) keeps last result of multiple headers
+        headers  = dict([ (h.lower(),v)) for (h,v) in response.getheaders() ])
         data     = response.read()
         return (status, reason, headers, data)
 
@@ -109,10 +111,12 @@ class ROSRS_Session(object):
         """
         Perform HTTP request with RDF response.
         If requests succeeds, return response as RDF graph,
-        or return fake 600 status if RDF cannot be parsed.
+        or return fake 9xx status if RDF cannot be parsed
+        otherwise return responbse and content per request.
+        Thus, only 2xx responses include RDF data.
         """
         (status, reason, headers, data) = self.rosrs.doRequest(uripath,
-            method=method, body=bory,
+            method=method, body=body,
             accept="application/rdf+xml", headers=headers)
         if status >= 200 and status < 300:
             if headers["content-type"].lower() == "application/rdf+xml":
@@ -121,10 +125,10 @@ class ROSRS_Session(object):
                     rdfgraph.parse(data=data, format="xml")
                     data = rdfgraph
                 except Exception, e:
-                    status   = 600
+                    status   = 902
                     reason   = "RDF parse failure"
             else:
-                status   = 600
+                status   = 901
                 reason   = "Non-RDF content-type returned"
         return (status, reason, headers, data)
 
@@ -143,7 +147,10 @@ class ROSRS_Session(object):
 
     def createRO(self, id, title, creator, date):
         """
-        Create a new RO, return copy of manifest as RDF graph
+        Create a new RO, return (status, reason, uri, manifest):
+        status+reason: 201 Created or 409 Exists
+        uri+manifest: URI and copy of manifest as RDF graph if 201 status,
+                      otherwise None and response data as diagnostic
         """
         reqheaders   = {
             "slug":     id
@@ -157,10 +164,38 @@ class ROSRS_Session(object):
         roinfotext = json.dumps(roinfo)
         (status, reason, headers, data) = self.rosrs.doRequestRDF("",
             method="POST", body=roinfotext, headers=reqheaders)
-        if status < 200 or status >= 300:
-            raise self.error("Error listing ROs", "%d03 %s"%(status, reason))
         log.debug("ROSRS_session.createRO: %d03 %s: %s"%(status, reason, repr(data)))
-        return data
+        if status == 201:
+            return (status, reason, rdflib.URIRef(headers["location"]), data)
+        if status == 409:
+            return (status, reason, None, data)
+        raise self.error("Error creating RO", "%d03 %s"%(status, reason))
+
+    def deleteRO(self, rouri):
+        """
+        Delete an RO
+        """
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="DELETE",
+            accept="application/rdf+xml")
+        if status in [204, 404]:
+            return (status, reason)
+        raise self.error("Error deleting RO", "%d03 %s"%(status, reason))
+
+    def getROManifest(self, rouri):
+        """
+        Retrieve an RO manifest
+        """
+        (status, reason, headers, data) = self.rosrs.doRequestRDF(rouri,
+            method="GET")
+        if status == 303:
+            uri = headers["location"]
+            (status, reason, headers, data) = self.rosrs.doRequestRDF(uri,
+                method="GET")
+        if status in [200, 404]:
+            return (status, reason, headers, data if status == 200 else None)
+        raise self.error("Error retrieving RO manifest", "%d03 %s"%(status, reason))
+
 
 
 # Test cases
@@ -193,48 +228,119 @@ class TestApi_ROSRS(unittest.TestCase):
     def testCreateRO(self):
         # Create an RO: POST to ROSRS
         reqheaders   = {
-            "slug":     "TestRO"
+            "slug":     "TestCreateRO"
             }
         roinfo = {
-            "id":       "TestRO",
-            "title":    "Test research object"
+            "id":       "TestCreateRO",
+            "title":    "Test create research object"
             "creator":  "TestAPI_ROSRS.py"
             "date":     "2012-06-27"
             }
         roinfotext = json.dumps(roinfo)
-        (status, reason, headers, data) = self.rosrs.doRequest("",
+        (status, reason, headers, manifest) = self.rosrs.doRequestRDF("",
             method="POST", headers=reqheaders, body=roinfotext,
             accept="application/rdf+xml")
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "application/rdf+xml")
-        self.assertEqual(headers["location"],     "...")
-        self.assertEqual(data, [])
+        self.assertEqual(headers["location"], self.rosrs.baseuri()+"TestCreateRO/")
+        # Check manifest RDF graph
+        rouri = rdflib.URIRef(headers["location"])
+        self.assertIn((rouri, RDF.type, RO.ResearchObject), manifest)
         # Test that new RO is in collection
+        # Response is simple list of URIs (for now)
         rolist = self.rosrs.listROs()
         self.assertEqual(status, 200)
-        self.assertIn(self.rosrs.baseuri+"TestRO/", [ r["uri"] for r in rolist ] )
+        self.assertIn(str(rouri), [ r["uri"] for r in rolist ] )
+        # Clean up
+        self.rosrs.deleteRO("TestCreateRO/")
         return
 
     def testDeleteRO(self):
-        # Create an RO: POST to ROSRS
-
-
-
-
-
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestDeleteRO",
+            "Test RO for deletion", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Test that new RO is in collection
+        rolist = self.rosrs.listROs()
+        self.assertEqual(status, 200)
+        self.assertIn(self.rosrs.baseuri+"TestDeleteRO/", [ r["uri"] for r in rolist ] )
+        # Delete an RO; locate proxy, delete proxy
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="DELETE",
+            accept="application/rdf+xml")
+        self.assertEqual(status, 204)
+        self.assertEqual(reason, "No content")
+        # Test that new RO is not in collection
+        rolist = self.rosrs.listROs()
+        self.assertEqual(status, 200)
+        self.assertNotIn(self.rosrs.baseuri+"TestDeleteRO/", [ r["uri"] for r in rolist ] )
         return
 
     def testGetROManifest(self):
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestGetRO",
+            "Test RO for manifest access", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
         # Access RO manifest
+        (status, reason, headers, manifest) = self.rosrs.doRequestRDF(rouri,
+            method="GET")
+        self.assertEqual(status, 303)
+        self.assertEqual(reason, "See other")
+        manifesturi = headers["location"]
+        (status, reason, headers, manifest) = self.rosrs.doRequestRDF(manifesturi,
+            method="GET")
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertEqual(headers["content-type"], "application/rdf+xml")
+        # Check manifest RDF graph
+        self.assertIn((rouri, RDF.type, RO.ResearchObject), manifest)
+
+        # @@ other tests here @@
+
+        # Clean up
+        self.rosrs.deleteRO("TestGetRO/")
         return
 
     def testGetROPage(self):
-        # Access RO as landing page
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestGetRO",
+            "Test RO for manifest access", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Access RO landing page
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="GET", accept="text/html")
+        self.assertEqual(status, 303)
+        self.assertEqual(reason, "See other")
+        pageuri = headers["location"]
+        (status, reason, headers, data) = self.rosrs.doRequest(pageuri,
+            method="GET", accept="text/html")
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertEqual(headers["content-type"], "text/html")
+        # Clean up
+        self.rosrs.deleteRO("TestGetRO/")
         return
 
     def testGetROZip(self):
-        # Access RO as ZIP file
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestGetRO",
+            "Test RO for manifest access", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Access RO content
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="GET", accept="application/zip")
+        self.assertEqual(status, 303)
+        self.assertEqual(reason, "See other")
+        pageuri = headers["location"]
+        (status, reason, headers, data) = self.rosrs.doRequest(pageuri,
+            method="GET", accept="application/zip")
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertEqual(headers["content-type"], "application/zip")
+        # @@ test content of zip (data)?
+        # Clean up
+        self.rosrs.deleteRO("TestGetRO/")
         return
 
     def testAggregateResourceExt(self):
@@ -242,7 +348,7 @@ class TestApi_ROSRS(unittest.TestCase):
         return
 
     def testAggregateResourceIntFull(self):
-        # Aggegate internal resource (full form): POST prpxy, then PUT content
+        # Aggegate internal resource (full form): POST proxy, then PUT content
         return
 
     def testAggregateResourceShort(self):
@@ -265,6 +371,16 @@ class TestApi_ROSRS(unittest.TestCase):
     def testDeleteAnnotation(self):
         # Delete an annotation (leaves annotation body):
         # find annotation URI, DELETE annotation
+        return
+
+    def testCopyROasNew(self):
+        # Copy an existing RO as a new RO (part of RO EVO API)
+        # POST description of new RO to ROSR service
+        return
+
+    def testUpdateROStatus(self):
+        # Update statius of RO (part of RO EVO API)
+        # HEAD to locate associated roevo resource, POST to roevo resource
         return
 
     # Sentinel/placeholder tests
@@ -310,6 +426,8 @@ def getTestSuite(select="unit"):
             , "testDeleteResourceInt"
             , "testCreateAnnotation"
             , "testDeleteAnnotation"
+            , "testCopyROasNew"
+            , "testUpdateROStatus"
             ],
         "component":
             [ "testComponents"
