@@ -155,7 +155,7 @@ class ROSRS_Session(object):
         """
         (status, reason, headers, data) = self.doRequest("")
         if status < 200 or status >= 300:
-            raise self.error("Error listing ROs", "%d03 %s"%(status, reason))
+            raise self.error("Error listing ROs", "%03d %s"%(status, reason))
         log.debug("ROSRS_session.listROs: %s"%(repr(data)))
         urilist = data.splitlines()
         return [ { "uri" : u } for u in urilist ]
@@ -179,12 +179,12 @@ class ROSRS_Session(object):
         roinfotext = json.dumps(roinfo)
         (status, reason, headers, data) = self.rosrs.doRequestRDF("",
             method="POST", body=roinfotext, headers=reqheaders)
-        log.debug("ROSRS_session.createRO: %d03 %s: %s"%(status, reason, repr(data)))
+        log.debug("ROSRS_session.createRO: %03d %s: %s"%(status, reason, repr(data)))
         if status == 201:
             return (status, reason, rdflib.URIRef(headers["location"]), data)
         if status == 409:
             return (status, reason, None, data)
-        raise self.error("Error creating RO", "%d03 %s"%(status, reason))
+        raise self.error("Error creating RO", "%03d %s"%(status, reason))
 
     def deleteRO(self, rouri):
         """
@@ -195,7 +195,33 @@ class ROSRS_Session(object):
             accept="application/rdf+xml")
         if status in [204, 404]:
             return (status, reason)
-        raise self.error("Error deleting RO", "%d03 %s"%(status, reason))
+        raise self.error("Error deleting RO", "%03d %s"%(status, reason))
+
+    def getROResource(self, resuriref, rouri=None, accept=None, reqheaders=None):
+        """
+        Retrieve resource from RO
+        """
+        resuri = str(resuriref)
+        if rouri:
+            resuri = urlparse.urljoin(str(rouri), resuri)
+        (status, reason, headers, data) = self.doRequest(resuri,
+            method="GET", accept=accept, reqheaders=reqheaders)
+        if status in [200, 404]:
+            return (status, reason, headers, data if status == 200 else None)
+        raise self.error("Error retrieving RO resource", "%03d %s (%s)"%(status, reason, resuriref))
+
+    def getROResourceRDF(self, resuriref, rouri=None, reqheaders=None):
+        """
+        Retrieve RDF resource from RO
+        """
+        resuri = str(resuriref)
+        if rouri:
+            resuri = urlparse.urljoin(str(rouri), resuri)
+        (status, reason, headers, data) = self.doRequestRDF(resuri,
+            method="GET", reqheaders=reqheaders)
+        if status in [200, 404]:
+            return (status, reason, headers, data if status == 200 else None)
+        raise self.error("Error retrieving RO resource", "%03d %s (%s)"%(status, reason, resuriref))
 
     def getROManifest(self, rouri):
         """
@@ -211,21 +237,21 @@ class ROSRS_Session(object):
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO manifest", "%d03 %s"%(status, reason))
 
-    def getROResource(self, resuriref, rouri=None, accept=None, reqheaders=None):
+    def getROZip(self, rouri):
         """
-        Retrieve resource from RO
+        Retrieve an RO as ZIP file
         """
-        if rouri:
-            resuri = urlparse.urljoin(rouri, resuriref)
-        else:
-            resuri = resuriref
-        (status, reason, headers, data) = self.doRequest(resuri,
-            method="GET", accept=accept, reqheaders=reqheaders)
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="GET", accept="application/zip")
+        if status == 303:
+            uri = headers["location"]
+            (status, reason, headers, data) = self.rosrs.doRequest(uri,
+                method="GET", accept="application/zip")
         if status in [200, 404]:
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO manifest", "%d03 %s"%(status, reason))
 
-    def aggregateResourceInt(rouri, ctype="application/octet-stream", body=None):
+    def aggregateResourceInt(rouri, id, ctype="application/octet-stream", body=None):
         # @@TODO: create internal resource - use code from long-form test case when passes
         return (status, reason, proxyuri, resuri)
 
@@ -386,13 +412,15 @@ class TestApi_ROSRS(unittest.TestCase):
             "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
         self.assertEqual(status, 201)
         # Aggegate internal resource: POST proxy ...
+        reqheaders = { "slug": "test/path" }
         (status, reason, headers, data) = self.rosrs.doRequest(rouri,
-            method="POST", ctype="application/vnd.wf4ever.proxy")
+            method="POST", ctype="application/vnd.wf4ever.proxy", reqheaders)
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
         proxyuri = rdflib.URURef(headers["location"])
         links    = self.rosrs.parseLinks(headers)
         resuri   = links[str(ORE.proxyFor)]
+        self.assertEqual(str(resuri),str(rouri)+"test/path")
         # ... then PUT content
         rescontent = "Resource content\n"
         (status, reason, headers, data) = self.rosrs.doRequest(resuri,
