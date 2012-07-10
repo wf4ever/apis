@@ -340,10 +340,11 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "text/plain")
         #self.assertEqual(headers["content-type"], "application/rdf+xml")
-        print
-        print "---- testListROs ----"
-        print data
-        print "----"
+        if 0:
+            print
+            print "---- testListROs ----"
+            print data
+            print "----"
         return
 
     def testCreateRO(self):
