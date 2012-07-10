@@ -315,6 +315,23 @@ class ROSRS_Session(object):
                             "%d03 %s"%(status, reason), resuri)
         return (status, reason, proxyuri, resuri)
 
+    def aggregateResourceExt(self, rouri, resuri):
+        """
+        Aggegate internal resource
+        Return (status, reason, proxyuri, resuri), where status is 200 or 201
+        """
+        # Aggegate external resource: POST proxy ...
+        proxydata   = str(resuri)+"\n"
+        (status, reason, headers, data) = self.doRequest(rouri,
+            method="POST", ctype="application/vnd.wf4ever.proxy",
+            body=proxydata)
+        if status != 201:
+            raise self.error("Error creating aggregation proxy",
+                            "%d03 %s"%(status, reason), str(resuri))
+        proxyuri = rdflib.URIRef(headers["location"])
+        links    = self.parseLinks(headers)
+        return (status, reason, proxyuri, rdflib.URIRef(resuri))
+
 # Test cases
 
 class TestApi_ROSRS(unittest.TestCase):
@@ -496,8 +513,36 @@ class TestApi_ROSRS(unittest.TestCase):
         return
 
     def testAggregateResourceExt(self):
-        # Aggegate external resource: POST proxy
-        assert False, "@@TODO - when internal test passes, hack code"
+        # Clean up from past runs
+        self.rosrs.deleteRO("TestAggregateRO/")
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        externaluri = rdflib.URIRef("http://example.com/external/resource.txt")
+        # Read manifest and check aggregated resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertNotIn((rouri, ORE.aggregates, externaluri), manifest)
+        # Aggegate external resource: POST proxy ...
+        proxydata   = str(externaluri)+"\n"
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="POST", ctype="application/vnd.wf4ever.proxy",
+            body=proxydata)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        proxyuri = rdflib.URIRef(headers["location"])
+        links    = self.rosrs.parseLinks(headers)
+        resuri   = links[str(ORE.proxyFor)]
+        self.assertEqual(str(resuri),str(externaluri))
+        # Read manifest and check aggregated resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertIn((rouri, ORE.aggregates, externaluri), manifest)
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
         return
 
     def testDeleteResourceExt(self):
@@ -548,9 +593,39 @@ class TestApi_ROSRS(unittest.TestCase):
         self.rosrs.deleteRO("TestAggregateRO/")
         return
 
-    def testAggregateResourceShort(self):
+    def testAggregateResourceIntShort(self):
         # Aggegate internal resource (shortcut): POST content
-        assert False, "@@TODO - when long-form test passes, hack code"
+        # Clean up from past runs
+        self.rosrs.deleteRO("TestAggregateRO/")
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Aggegate internal resource: POST content ...
+        rescontent = "Resource content\n"
+        reqheaders = { "slug": "test/path" }
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="POST", ctype="text/plain", body=rescontent,
+            reqheaders=reqheaders)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        proxyuri = rdflib.URIRef(headers["location"])
+        links    = self.rosrs.parseLinks(headers)
+        resuri   = links[str(ORE.proxyFor)]
+        self.assertEqual(str(resuri),str(rouri)+"test/path")
+        # Read manifest and check aggregated resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertIn( (rouri, ORE.aggregates, resuri), manifest )
+        # GET content
+        (status, reason, headers, data) = self.rosrs.doRequest(resuri,
+            method="GET", ctype="text/plain")
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertEqual(data, rescontent)
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
         return
 
     def testDeleteResourceInt(self):
@@ -594,18 +669,6 @@ class TestApi_ROSRS(unittest.TestCase):
         # Clean up
         self.rosrs.deleteRO("TestAggregateRO/")
         return
-
-#<rdf:RDF
-#    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-#    xmlns:j.0="http://purl.org/wf4ever/ro#"
-#    xmlns:j.2="http://purl.org/dc/terms/"
-#    xmlns:j.1="http://www.openarchives.org/ore/terms/" >
-#  <rdf:Description rdf:about="http://sandbox.wf4ever-project.org/rodl/ROs/TestAggregateRO/.ro/proxies/a77b8ef9-0f51-42b9-ae32-9fc3188a953a">
-#    <j.1:proxyIn rdf:resource="http://sandbox.wf4ever-project.org/rodl/ROs/TestAggregateRO/"/>
-#    <j.1:proxyFor rdf:resource="http://sandbox.wf4ever-project.org/rodl/ROs/TestAggregateRO/test/path"/>
-#    <rdf:type rdf:resource="http://www.openarchives.org/ore/terms/Proxy"/>
-#  </rdf:Description>
-#</rdf:RDF>
 
     def testCreateAnnotation(self):
         # Assume annotation body URI is known - internal or external
@@ -665,7 +728,7 @@ def getTestSuite(select="unit"):
             , "testGetROZip"
             , "testAggregateResourceExt"
             , "testAggregateResourceIntFull"
-            , "testAggregateResourceShort"
+            , "testAggregateResourceIntShort"
             , "testDeleteResourceExt"
             , "testDeleteResourceInt"
             , "testCreateAnnotation"
