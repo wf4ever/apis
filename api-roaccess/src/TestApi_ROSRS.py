@@ -688,6 +688,12 @@ class TestApi_ROSRS(unittest.TestCase):
         # Delete proxy
         (status, reason, headers, data) = self.rosrs.doRequest(proxyuri,
             method="DELETE")
+        self.assertEqual(status, 307)
+        self.assertEqual(reason, "Temporary Redirect")
+        self.assertEqual(headers["location"], str(resuri))
+        # Delete resource
+        (status, reason, headers, data) = self.rosrs.doRequest(resuri,
+            method="DELETE")
         self.assertEqual(status, 204)
         self.assertEqual(reason, "No Content")
         # Check that resource is no longer available
