@@ -258,6 +258,13 @@ class ROSRS_Session(object):
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO resource", "%03d %s (%s)"%(status, reason, resuriref))
 
+    def getROResourceProxy(self, resuriref, rouri=None):
+        """
+        Retrieve proxy description for resource.
+        Return (status, reason, proxyuri, manifest), where status is 200 or 404
+        """
+        raise self.error("getROResourceProxy Unimplemented")
+
     def getROManifest(self, rouri):
         """
         Retrieve an RO manifest
@@ -527,7 +534,16 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(reason, "OK")
         self.assertNotIn((rouri, ORE.aggregates, externaluri), manifest)
         # Aggegate external resource: POST proxy ...
-        proxydata   = str(externaluri)+"\n"
+        proxydata = ("""
+            <rdf:RDF
+
+              xmlns:ore="http://www.openarchives.org/ore/terms/"
+              xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
+              <ore:Proxy>
+                <ore:proxyFor rdf:resource="%s" />
+              </ore:Proxy>
+            </rdf:RDF>
+            """)%externaluri
         (status, reason, headers, data) = self.rosrs.doRequest(rouri,
             method="POST", ctype="application/vnd.wf4ever.proxy",
             body=proxydata)
@@ -547,6 +563,7 @@ class TestApi_ROSRS(unittest.TestCase):
         return
 
     def testDeleteResourceExt(self):
+        # @@TODO
         # De-aggregate internal resource: find proxy URI, DELETE proxy, redirect
         # @@ Discussing whether to not do redirect.
         return
@@ -560,9 +577,17 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 201)
         # Aggegate internal resource: POST proxy ...
         reqheaders = { "slug": "test/path" }
+        proxydata = ("""
+            <rdf:RDF
+              xmlns:ore="http://www.openarchives.org/ore/terms/"
+              xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
+              <ore:Proxy>
+              </ore:Proxy>
+            </rdf:RDF>
+            """)
         (status, reason, headers, data) = self.rosrs.doRequest(rouri,
             method="POST", ctype="application/vnd.wf4ever.proxy",
-            reqheaders=reqheaders)
+            reqheaders=reqheaders, body=proxydata)
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
         proxyuri = rdflib.URIRef(headers["location"])
