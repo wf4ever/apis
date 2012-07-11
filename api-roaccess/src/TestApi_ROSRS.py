@@ -459,6 +459,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertIn((rouri, ORE.isDescribedBy, manifesturi), manifest)
         # @@TODO: Id
         # @@TTODO: itle
+        # @@TODO look for proxy in manifest
         # Clean up
         self.rosrs.deleteRO("TestGetRO/")
         return
@@ -580,8 +581,8 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
         self.assertEqual(headers["location"], str(resuri))
-        links    = self.rosrs.parseLinks(headers)
-        self.assertEqual(links[str(ORE.proxy)], str(resuri))
+        ####links    = self.rosrs.parseLinks(headers)
+        ####self.assertEqual(links[str(ORE.proxyFor)], str(resuri))
         ####self.assertEqual(status, 200)
         ####self.assertEqual(reason, "OK")
         # Read manifest and check aggregated resource
@@ -640,7 +641,8 @@ class TestApi_ROSRS(unittest.TestCase):
         rescontent = "Resource content\n"
         (status, reason, proxyuri, resuri) = self.rosrs.aggregateResourceInt(
             rouri, "test/path", ctype="text/plain", body=rescontent)
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
         # Find proxy for resource
         (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
@@ -662,12 +664,18 @@ class TestApi_ROSRS(unittest.TestCase):
         (status, reason, headers, data) = self.rosrs.doRequest(proxyuri,
             method="DELETE")
         self.assertEqual(status, 204)
-        self.assertEqual(reason, "No content")
+        self.assertEqual(reason, "No Content")
         # Check that resource is no longer available
-        (status, reason, headers, data) = self.rosrs.getROResource(uri)
+        (status, reason, headers, data) = self.rosrs.getROResource(resuri)
         self.assertEqual(status, 404)
         # Clean up
         self.rosrs.deleteRO("TestAggregateRO/")
+        return
+
+    def testGetROResource(self):
+        return
+
+    def testGetROResourceProxy(self):
         return
 
     def testCreateAnnotation(self):
