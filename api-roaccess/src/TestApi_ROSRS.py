@@ -12,21 +12,12 @@ import json
 import re
 import StringIO
 import httplib
-#import urllib
 import urlparse
 import rdflib, rdflib.graph
 
 from MiscLib import TestUtils
 
 from ro_namespaces import RDF, ORE, RO, DCTERMS
-
-# Set up to use SPARQL
-#rdflib.plugin.register(
-#    'sparql', rdflib.query.Processor,
-#    'rdfextras.sparql.processor', 'Processor')
-#rdflib.plugin.register(
-#    'sparql', rdflib.query.Result,
-#    'rdfextras.sparql.query', 'SPARQLQueryResult')
 
 # Logging object
 log = logging.getLogger(__name__)
@@ -258,12 +249,32 @@ class ROSRS_Session(object):
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO resource", "%03d %s (%s)"%(status, reason, resuriref))
 
-    def getROResourceProxy(self, resuriref, rouri=None):
+    def getROResourceProxy(self, resuriref, rouri):
         """
         Retrieve proxy description for resource.
-        Return (status, reason, proxyuri, manifest), where status is 200 or 404
+        Return (proxyuri, manifest), where status is 200 or 404
         """
-        raise self.error("getROResourceProxy Unimplemented")
+        (status, reason, headers, manifest) = self.getROManifest(rouri)
+        if status != 200:
+            raise self.error("Error retrieving RO manifest", "%d03 %s"%
+                             (status, reason))
+        resuri = rdflib.URIRef(urlparse.urljoin(str(rouri), str(resuriref)))
+        #query = (
+        #    "SELECT ?p WHERE "
+        #      "{ ?p <%(proxyin)s> <%(rouri)s> ; <%(proxyfor)s> <%(resuri)s> }"%
+        #    { "proxyin":  ORE.proxyIn
+        #    , "proxyfor": ORE.proxyFor
+        #    , "rouri":    str(rouri)
+        #    , "resuri":   str(resuri)
+        #    })
+        #resp  = manifest.query(query)
+        #proxyterms = [ b["p"] for b in resp.bindings ]
+        proxyterms = list(manifest.subjects(predicate=ORE.proxyFor, object=resuri))
+        log.debug("getROResourceProxy proxyterms: %s"%(repr(proxyterms)))
+        proxyuri = None
+        if len(proxyterms) == 1:
+            proxyuri = proxyterms[0]
+        return (proxyuri, manifest)
 
     def getROManifest(self, rouri):
         """
@@ -278,7 +289,8 @@ class ROSRS_Session(object):
                 method="GET")
         if status in [200, 404]:
             return (status, reason, headers, data if status == 200 else None)
-        raise self.error("Error retrieving RO manifest", "%d03 %s"%(status, reason))
+        raise self.error("Error retrieving RO manifest",
+            "%d03 %s"%(status, reason))
 
     def getROZip(self, rouri):
         """
@@ -293,21 +305,31 @@ class ROSRS_Session(object):
                 method="GET", accept="application/zip")
         if status in [200, 404]:
             return (status, reason, headers, data if status == 200 else None)
-        raise self.error("Error retrieving RO manifest", "%d03 %s"%(status, reason))
+        raise self.error("Error retrieving RO as ZIP file",
+            "%d03 %s"%(status, reason))
 
-    def aggregateResourceInt(self, rouri, respath, ctype="application/octet-stream", body=None):
+    def aggregateResourceInt(
+            self, rouri, respath, ctype="application/octet-stream", body=None):
         """
         Aggegate internal resource
         Return (status, reason, proxyuri, resuri), where status is 200 or 201
         """
         # POST (empty) proxy value to RO ...
         reqheaders = { "slug": respath }
+        proxydata = ("""
+            <rdf:RDF
+              xmlns:ore="http://www.openarchives.org/ore/terms/"
+              xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
+              <ore:Proxy>
+              </ore:Proxy>
+            </rdf:RDF>
+            """)
         (status, reason, headers, data) = self.doRequest(rouri,
             method="POST", ctype="application/vnd.wf4ever.proxy",
-            reqheaders=reqheaders)
+            reqheaders=reqheaders, body=proxydata)
         if status != 201:
             raise self.error("Error creating aggregation proxy",
-                            "%d03 %s"%(status, reason), respath)
+                            "%d03 %s (%s)"%(status, reason, respath))
         proxyuri = rdflib.URIRef(headers["location"])
         links    = self.parseLinks(headers)
         if str(ORE.proxyFor) not in links:
@@ -319,7 +341,7 @@ class ROSRS_Session(object):
             method="PUT", ctype=ctype, body=body)
         if status not in [200,201]:
             raise self.error("Error creating aggregated resource content",
-                            "%d03 %s"%(status, reason), resuri)
+                "%d03 %s (%s)"%(status, reason, respath))
         return (status, reason, proxyuri, resuri)
 
     def aggregateResourceExt(self, rouri, resuri):
@@ -328,13 +350,21 @@ class ROSRS_Session(object):
         Return (status, reason, proxyuri, resuri), where status is 200 or 201
         """
         # Aggegate external resource: POST proxy ...
-        proxydata   = str(resuri)+"\n"
+        proxydata = ("""
+            <rdf:RDF
+              xmlns:ore="http://www.openarchives.org/ore/terms/"
+              xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
+              <ore:Proxy>
+                <ore:proxyFor rdf:resource="%s" />
+              </ore:Proxy>
+            </rdf:RDF>
+            """)%str(resuri)
         (status, reason, headers, data) = self.doRequest(rouri,
             method="POST", ctype="application/vnd.wf4ever.proxy",
             body=proxydata)
         if status != 201:
             raise self.error("Error creating aggregation proxy",
-                            "%d03 %s"%(status, reason), str(resuri))
+                "%d03 %s (%s)"%(status, reason, str(resuri)))
         proxyuri = rdflib.URIRef(headers["location"])
         links    = self.parseLinks(headers)
         return (status, reason, proxyuri, rdflib.URIRef(resuri))
@@ -345,7 +375,6 @@ class TestApi_ROSRS(unittest.TestCase):
 
     def setUp(self):
         super(TestApi_ROSRS, self).setUp()
-        # @@TODO - use separate config for this
         self.rosrs = ROSRS_Session(Config.ROSRS_API_URI,
             accesskey=Config.AUTHORIZATION)
         return
@@ -520,54 +549,6 @@ class TestApi_ROSRS(unittest.TestCase):
         self.rosrs.deleteRO("TestGetRO/")
         return
 
-    def testAggregateResourceExt(self):
-        # Clean up from past runs
-        self.rosrs.deleteRO("TestAggregateRO/")
-        # Create test RO
-        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
-            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
-        self.assertEqual(status, 201)
-        externaluri = rdflib.URIRef("http://example.com/external/resource.txt")
-        # Read manifest and check aggregated resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
-        self.assertEqual(status, 200)
-        self.assertEqual(reason, "OK")
-        self.assertNotIn((rouri, ORE.aggregates, externaluri), manifest)
-        # Aggegate external resource: POST proxy ...
-        proxydata = ("""
-            <rdf:RDF
-
-              xmlns:ore="http://www.openarchives.org/ore/terms/"
-              xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
-              <ore:Proxy>
-                <ore:proxyFor rdf:resource="%s" />
-              </ore:Proxy>
-            </rdf:RDF>
-            """)%externaluri
-        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
-            method="POST", ctype="application/vnd.wf4ever.proxy",
-            body=proxydata)
-        self.assertEqual(status, 201)
-        self.assertEqual(reason, "Created")
-        proxyuri = rdflib.URIRef(headers["location"])
-        links    = self.rosrs.parseLinks(headers)
-        resuri   = links[str(ORE.proxyFor)]
-        self.assertEqual(str(resuri),str(externaluri))
-        # Read manifest and check aggregated resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
-        self.assertEqual(status, 200)
-        self.assertEqual(reason, "OK")
-        self.assertIn((rouri, ORE.aggregates, externaluri), manifest)
-        # Clean up
-        self.rosrs.deleteRO("TestAggregateRO/")
-        return
-
-    def testDeleteResourceExt(self):
-        # @@TODO
-        # De-aggregate internal resource: find proxy URI, DELETE proxy, redirect
-        # @@ Discussing whether to not do redirect.
-        return
-
     def testAggregateResourceIntFull(self):
         # Clean up from past runs
         self.rosrs.deleteRO("TestAggregateRO/")
@@ -657,7 +638,6 @@ class TestApi_ROSRS(unittest.TestCase):
     def testDeleteResourceInt(self):
         # Clean up from previous runs
         self.rosrs.deleteRO("TestAggregateRO/")
-        # De-aggregate external resource: find proxy URI, DELETE proxy
         # Create test RO
         (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
             "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
@@ -668,6 +648,8 @@ class TestApi_ROSRS(unittest.TestCase):
             rouri, "test/path", ctype="text/plain", body=rescontent)
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
+        log.debug("testDeleteResourceInt proxyuri: %s"%str(proxyuri))
+        log.debug("testDeleteResourceInt   resuri: %s"%str(resuri))
         # Find proxy for resource
         (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
@@ -699,6 +681,91 @@ class TestApi_ROSRS(unittest.TestCase):
         # Check that resource is no longer available
         (status, reason, headers, data) = self.rosrs.getROResource(resuri)
         self.assertEqual(status, 404)
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
+        return
+
+    def testAggregateResourceExt(self):
+        # Clean up from past runs
+        self.rosrs.deleteRO("TestAggregateRO/")
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        externaluri = rdflib.URIRef("http://example.com/external/resource.txt")
+        # Read manifest and check aggregated resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertNotIn((rouri, ORE.aggregates, externaluri), manifest)
+        # Aggegate external resource: POST proxy ...
+        proxydata = ("""
+            <rdf:RDF
+              xmlns:ore="http://www.openarchives.org/ore/terms/"
+              xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" >
+              <ore:Proxy>
+                <ore:proxyFor rdf:resource="%s" />
+              </ore:Proxy>
+            </rdf:RDF>
+            """)%externaluri
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="POST", ctype="application/vnd.wf4ever.proxy",
+            body=proxydata)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        proxyuri = rdflib.URIRef(headers["location"])
+        links    = self.rosrs.parseLinks(headers)
+        resuri   = links[str(ORE.proxyFor)]
+        self.assertEqual(str(resuri),str(externaluri))
+        # Read manifest and check aggregated resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertIn((rouri, ORE.aggregates, externaluri), manifest)
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
+        return
+
+    def testDeleteResourceExt(self):
+        # Clean up from previous runs
+        self.rosrs.deleteRO("TestAggregateRO/")
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Create test resource
+        externaluri = rdflib.URIRef("http://example.com/external/resource.txt")
+        (status, reason, proxyuri, resuri) = self.rosrs.aggregateResourceExt(
+            rouri, externaluri)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        self.assertEqual(resuri, externaluri)
+        # Find proxy for resource
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        query = (
+            "SELECT ?p WHERE "
+              "{ ?p <%(proxyin)s> <%(rouri)s> ; <%(proxyfor)s> <%(resuri)s> }"%
+            { "proxyin":  ORE.proxyIn
+            , "proxyfor": ORE.proxyFor
+            , "rouri":    str(rouri)
+            , "resuri":   str(resuri)
+            })
+        resp  = manifest.query(query)
+        proxyterms = [ b["p"] for b in resp.bindings ]
+        self.assertEqual(len(proxyterms), 1)
+        proxyuri = proxyterms[0]
+        self.assertIsInstance(proxyuri, rdflib.URIRef)
+        (proxyuri, manifest) = self.rosrs.getROResourceProxy(resuri, rouri)
+        self.assertIsInstance(proxyuri, rdflib.URIRef)
+        # Delete proxy
+        (status, reason, headers, data) = self.rosrs.doRequest(proxyuri,
+            method="DELETE")
+        self.assertEqual(status, 204)
+        self.assertEqual(reason, "No Content")
+        # Check that resource is no longer available
+        (proxyuri, manifest) = self.rosrs.getROResourceProxy(resuri, rouri)
+        self.assertIsNone(proxyuri)
         # Clean up
         self.rosrs.deleteRO("TestAggregateRO/")
         return
@@ -765,11 +832,11 @@ def getTestSuite(select="unit"):
             , "testGetROManifest"
             , "testGetROPage"
             , "testGetROZip"
-            , "testAggregateResourceExt"
             , "testAggregateResourceIntFull"
             , "testAggregateResourceIntShort"
-            , "testDeleteResourceExt"
             , "testDeleteResourceInt"
+            , "testAggregateResourceExt"
+            , "testDeleteResourceExt"
             , "testCreateAnnotation"
             , "testDeleteAnnotation"
             , "testCopyROasNew"
