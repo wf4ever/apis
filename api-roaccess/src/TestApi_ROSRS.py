@@ -18,6 +18,7 @@ import rdflib, rdflib.graph
 from MiscLib import TestUtils
 
 from ro_namespaces import RDF, ORE, RO, DCTERMS
+from ROSRS_Session import ROSRS_Error, ROSRS_Session
 
 # Logging object
 log = logging.getLogger(__name__)
@@ -33,7 +34,8 @@ class Config:
 
 # Class for ROSRS errors
 
-class ROSRS_Error(Exception):
+# @@TODO delete class
+class ROSRS_ErrorZZZ(Exception):
 
     def __init__(self, msg="ROSRS_Error", value=None, srsuri=None):
         self._msg    = msg
@@ -53,7 +55,20 @@ class ROSRS_Error(Exception):
 
 # Class for handling ROSRS access
 
-class ROSRS_Session(object):
+# @@TODO delete class
+class ROSRS_SessionZZZ(object):
+    
+    """
+    Client access class for RO SRS - creates a session to access a single ROSRS endpoint,
+    and provides methods to access ROs and RO resources via the RO SRS API.
+    
+    See:
+    * http://www.wf4ever-project.org/wiki/display/docs/RO+SRS+interface+6
+    * http://www.wf4ever-project.org/wiki/display/docs/RO+evolution+API
+    
+    Related:
+    * http://www.wf4ever-project.org/wiki/display/docs/User+Management+2
+    """
 
     def __init__(self, srsuri, accesskey):
         log.debug("ROSRS_Session.__init__: srsuri "+srsuri)
@@ -252,23 +267,13 @@ class ROSRS_Session(object):
     def getROResourceProxy(self, resuriref, rouri):
         """
         Retrieve proxy description for resource.
-        Return (proxyuri, manifest), where status is 200 or 404
+        Return (proxyuri, manifest)
         """
         (status, reason, headers, manifest) = self.getROManifest(rouri)
         if status != 200:
             raise self.error("Error retrieving RO manifest", "%d03 %s"%
                              (status, reason))
         resuri = rdflib.URIRef(urlparse.urljoin(str(rouri), str(resuriref)))
-        #query = (
-        #    "SELECT ?p WHERE "
-        #      "{ ?p <%(proxyin)s> <%(rouri)s> ; <%(proxyfor)s> <%(resuri)s> }"%
-        #    { "proxyin":  ORE.proxyIn
-        #    , "proxyfor": ORE.proxyFor
-        #    , "rouri":    str(rouri)
-        #    , "resuri":   str(resuri)
-        #    })
-        #resp  = manifest.query(query)
-        #proxyterms = [ b["p"] for b in resp.bindings ]
         proxyterms = list(manifest.subjects(predicate=ORE.proxyFor, object=resuri))
         log.debug("getROResourceProxy proxyterms: %s"%(repr(proxyterms)))
         proxyuri = None
@@ -291,6 +296,8 @@ class ROSRS_Session(object):
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO manifest",
             "%d03 %s"%(status, reason))
+
+    # def getROLandingPage(self, rouri):
 
     def getROZip(self, rouri):
         """
@@ -346,7 +353,7 @@ class ROSRS_Session(object):
 
     def aggregateResourceExt(self, rouri, resuri):
         """
-        Aggegate internal resource
+        Aggegate extternal resource
         Return (status, reason, proxyuri, resuri), where status is 200 or 201
         """
         # Aggegate external resource: POST proxy ...
@@ -368,6 +375,77 @@ class ROSRS_Session(object):
         proxyuri = rdflib.URIRef(headers["location"])
         links    = self.parseLinks(headers)
         return (status, reason, proxyuri, rdflib.URIRef(resuri))
+
+    def removeResource(self, rouri, resuri):
+        """
+        Remove resource from aggregation (internal or external)
+        return (status, reason), where status is 204 No content or 404 Not found
+        """
+        # Find proxy for resource
+        (proxyuri, manifest) = self.getROResourceProxy(resuri, rouri)
+        if proxyuri == None: return (404, "Not Found")
+        assert isinstance(proxyuri, rdflib.URIRef)
+        # Delete proxy
+        (status, reason, headers, data) = self.doRequest(proxyuri,
+            method="DELETE")
+        if status == 307:
+            # Redirect to internal resource: delete that
+            assert headers["location"] == str(resuri)
+            (status, reason, headers, data) = self.doRequest(resuri,
+                method="DELETE")
+        log.debug("removeResource %s from %s: status %d, reason %s"%
+                  (str(resuri), str(rouri), status, reason))
+        assert status == 204
+        return (status, reason)
+
+    def createROAnnotationInt(self, rouri, resuri, anngr):
+        assert False, "@@TODO"
+        return (status, reason, annuri, bodyuri)
+
+    def createROAnnotationExt(self, rouri, resuri, bodyuri):
+        assert False, "@@TODO"
+        return (status, reason, annuri)
+
+    def updateROAnnotationInt(self, rouri, annuri, bodyuri):
+        assert False, "@@TODO"
+        return (status, reason, annuri, )
+
+    def getROResourceAnnotations(self, rouri, resuri):
+        assert False, "@@TODO"
+        yield annuri
+
+    def getROAnnotation(self, annuri):
+        assert False, "@@TODO"
+        return (status, reason, anngr)
+
+    def removeROAnnotation(self, rouri, annuri):
+        assert False, "@@TODO"
+        return (status, reason)
+
+    # See: http://www.wf4ever-project.org/wiki/display/docs/RO+evolution+API
+
+    # Need to fugure out how deferred values can work, associated with copyuri
+    # e.g. poll, notification subscribe, sync options
+
+    def copyRO(self, oldrouri, slug):
+        assert False, "@@TODO"
+        return (status, reason, copyuri)
+        # copyuri ->  Deferred(oldrouri, rotype, rostatus, newrouri)
+
+    def cancelCopyRO(self, copyuri):
+        assert False, "@@TODO"
+        return (status, reason)
+
+    def updateROStatus(self, rouri, rostatus):
+        assert False, "@@TODO"
+        return (status, reason, updateuri)
+
+    def getROEvolution(self, rouri):
+        assert False, "@@TODO"
+        return (status, reason, evogr)
+
+
+# ------------------------------------------------------------------------
 
 # Test cases
 
@@ -771,29 +849,82 @@ class TestApi_ROSRS(unittest.TestCase):
         return
 
     def testGetROResource(self):
+        # Clean up from previous runs
+        self.rosrs.deleteRO("TestAggregateRO/")
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Create internal test resource
+        rescontent = "Resource content\n"
+        (status, reason, proxyuri, resuri) = self.rosrs.aggregateResourceInt(
+            rouri, "test/path", ctype="text/plain", body=rescontent)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        log.debug("testDeleteResourceInt proxyuri: %s"%str(proxyuri))
+        log.debug("testDeleteResourceInt   resuri: %s"%str(resuri))
+        # Get resource content
+        (status, reason, headers, data)= self.rosrs.getROResource(
+            "test/path", rouri=rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertEqual(headers["content-type"], "text/plain")
+        self.assertEqual(data, rescontent)
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
         return
 
     def testGetROResourceProxy(self):
+        # Clean up from previous runs
+        self.rosrs.deleteRO("TestAggregateRO/")
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAggregateRO",
+            "Test RO for aggregating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Create internal test resource
+        rescontent = "Resource content\n"
+        (status, reason, proxyuri, resuri) = self.rosrs.aggregateResourceInt(
+            rouri, "test/path", ctype="text/plain", body=rescontent)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        log.debug("testDeleteResourceInt proxyuri: %s"%str(proxyuri))
+        log.debug("testDeleteResourceInt   resuri: %s"%str(resuri))
+        # Get resource proxy
+        (getproxyuri, manifest)= self.rosrs.getROResourceProxy(
+            "test/path", rouri=rouri)
+        self.assertEqual(getproxyuri, proxyuri)
+        # Clean up
+        self.rosrs.deleteRO("TestAggregateRO/")
         return
 
-    def testCreateAnnotation(self):
-        # Assume annotation body URI is known - internal or external
-        # POST annotation to RO
+    def testCreateROAnnotationInt(self):
         return
 
-    def testDeleteAnnotation(self):
-        # Delete an annotation (leaves annotation body):
-        # find annotation URI, DELETE annotation
+    def testCreateROAnnotationExt(self):
         return
 
-    def testCopyROasNew(self):
-        # Copy an existing RO as a new RO (part of RO EVO API)
-        # POST description of new RO to ROSR service
+    def testGetROResourceAnnotations(self):
+        return
+
+    def testGetROAnnotation(self):
+        return
+
+    def testUpdateROAnnotationInt(self):
+        return
+
+    def testRemoveROAnnotation(self):
+        return
+
+    def testCopyRO(self):
+        return
+
+    def testCancelCopyRO(self):
         return
 
     def testUpdateROStatus(self):
-        # Update statius of RO (part of RO EVO API)
-        # HEAD to locate associated roevo resource, POST to roevo resource
+        return
+
+    def testGetROEvolution(self):
         return
 
     # Sentinel/placeholder tests
@@ -837,10 +968,18 @@ def getTestSuite(select="unit"):
             , "testDeleteResourceInt"
             , "testAggregateResourceExt"
             , "testDeleteResourceExt"
-            , "testCreateAnnotation"
-            , "testDeleteAnnotation"
-            , "testCopyROasNew"
+            , "testGetROResource"
+            , "testGetROResourceProxy"
+            , "testCreateROAnnotationInt"
+            , "testCreateROAnnotationExt"
+            , "testGetROResourceAnnotations"
+            , "testGetROAnnotation"
+            , "testUpdateROAnnotationInt"
+            , "testRemoveROAnnotation"
+            , "testCopyRO"
+            , "testCancelCopyRO"
             , "testUpdateROStatus"
+            , "testGetROEvolution"
             ],
         "component":
             [ "testComponents"
