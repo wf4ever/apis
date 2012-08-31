@@ -29,8 +29,7 @@ testbase = os.path.dirname(__file__)
 # Test config details
 
 class Config:
-#    ROSRS_API_URI = "http://sandbox.wf4ever-project.org/rodl/ROs/"
-    ROSRS_API_URI = "http://localhost:8080/ROs/"
+    ROSRS_API_URI = "http://sandbox.wf4ever-project.org/rodl/ROs/"
     AUTHORIZATION = "47d5423c-b507-4e1c-8"
 
 # Test cases
