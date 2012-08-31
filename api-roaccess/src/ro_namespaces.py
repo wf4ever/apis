@@ -56,6 +56,7 @@ ORE = makeNamespace(ore,
 AO = makeNamespace(ao,
             [ "Annotation"
             , "body"
+            , "annotatesResource"
             ])
 DCTERMS = makeNamespace(dcterms,
             [ "identifier", "description", "title", "creator", "created"

@@ -17,7 +17,7 @@ import rdflib, rdflib.graph
 
 from MiscLib import TestUtils
 
-from ro_namespaces import RDF, RDFS, ORE, RO, DCTERMS
+from ro_namespaces import RDF, RDFS, ORE, RO, DCTERMS, AO
 from ROSRS_Session import ROSRS_Error, ROSRS_Session
 
 # Logging object
@@ -29,7 +29,8 @@ testbase = os.path.dirname(__file__)
 # Test config details
 
 class Config:
-    ROSRS_API_URI = "http://sandbox.wf4ever-project.org/rodl/ROs/"
+#    ROSRS_API_URI = "http://sandbox.wf4ever-project.org/rodl/ROs/"
+    ROSRS_API_URI = "http://localhost:8080/ROs/"
     AUTHORIZATION = "47d5423c-b507-4e1c-8"
 
 # Test cases
@@ -534,6 +535,7 @@ class TestApi_ROSRS(unittest.TestCase):
             <rdf:RDF
                xmlns:dct="http://purl.org/dc/terms/"
                xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+               xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
             >
               <rdf:Description rdf:about="test/file.txt">
                 <dct:title>Title for test/path</dct:title>
