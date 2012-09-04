@@ -29,7 +29,8 @@ testbase = os.path.dirname(__file__)
 # Test config details
 
 class Config:
-    ROSRS_API_URI = "http://sandbox.wf4ever-project.org/rodl/ROs/"
+#    ROSRS_API_URI = "http://sandbox.wf4ever-project.org/rodl/ROs/"
+    ROSRS_API_URI = "http://localhost:8080/ROs/"
     AUTHORIZATION = "47d5423c-b507-4e1c-8"
 
 # Test cases
@@ -579,12 +580,12 @@ class TestApi_ROSRS(unittest.TestCase):
         annuri   = rdflib.URIRef(headers["location"])
         links    = self.rosrs.parseLinks(headers)
         aresuri  = links[str(AO.annotatesResource)]
-        abodyuri = links[str(AO.annotationBody)]
+        abodyuri = links[str(AO.body)]
         self.assertEqual(aresuri,resuri)
         self.assertEqual(abodyuri,bodyuri)
         # Create another annotation (shortcut sequence)
         reqheaders = {
-            "Link": '''"<%s>; rel="%s"'''%(str(resuri), str(AO.annotates) ),
+            "Link": '''"<%s>; rel="%s"'''%(str(resuri), str(AO.annotatesResource) ),
             "Slug": "test/ann_file2.rdf"
             }
         annbody = """<?xml version="1.0" encoding="UTF-8"?>
@@ -606,7 +607,7 @@ class TestApi_ROSRS(unittest.TestCase):
         annuri   = rdflib.URIRef(headers["location"])
         links    = self.rosrs.parseLinks(headers)
         aresuri  = links[str(AO.annotatesResource)]
-        abodyuri = links[str(AO.annotationBody)]
+        abodyuri = links[str(AO.body)]
         self.assertEqual(aresuri,resuri)
         self.assertEqual(abodyuri,str(rouri)+"test/ann_file2.rdf")
         # Retrieve annotation
