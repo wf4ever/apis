@@ -34,6 +34,83 @@ class ROSRS_Error(Exception):
         return ( "ROSRS_Error(%s, value=%s, srsuri=%s)"%
                  (repr(self._msg), repr(self._value), repr(self._srsuri)))
 
+def splitValues(txt, sep=","):
+    """
+    Helper function returns list of delimited values in a string,
+    where delimiters in quotes are protected.
+    
+    @@TODO Is there a better way?  I tried using regexp, but grouping doesn't
+    seem to offer a way to handle repeated elements.
+    """
+    result = []
+    cursor = 0
+    begseg = cursor
+    while cursor < len(txt):
+        if txt[cursor] == '"':
+            # Skip quoted string
+            cursor += 1
+            while cursor < len(txt) and txt[cursor] != '"':
+                # skip '\' quoted-pair
+                if txt[cursor] == '\\': cursor += 1
+                cursor += 1
+            # Skip closing quote
+            if cursor < len(txt):
+                cursor += 1
+        elif txt[cursor] in sep:
+            result.append(txt[begseg:cursor])
+            cursor += 1
+            begseg = cursor
+        else:
+            cursor += 1
+    # append final segment
+    result.append(txt[begseg:cursor])
+    return result
+
+def testSplitValues():
+    assert splitValues("a,b,c") == ['a','b','c']
+    assert splitValues('a,"b,c",d') == ['a','"b,c"','d']
+    assert splitValues('a, "b, c\\", c1", d') == ['a',' "b, c\\", c1"',' d']
+    assert splitValues('a,"b,c",d', ";") == ['a,"b,c",d']
+    assert splitValues('a;"b;c";d', ";") == ['a','"b;c"','d']
+
+def parseLinks(headerlist):
+    """
+    Helper function to parse 'link:' headers,
+    returning a dictionary of links keyed by link relation type
+    
+    headerlist is a list of header (name,value) pairs
+    """
+    linkheaders = [ v for (h,v) in headerlist if h.lower() == "link" ]
+    log.debug("parseLinks linkheaders %s"%(repr(linkheaders)))
+    links = {}
+    for linkheader in linkheaders:
+        for linkval in splitValues(linkheader, ","):
+            linkparts = splitValues(linkval, ";")
+            linkmatch = re.match(r'''\s*<([^>]*)>\s*''', linkparts[0])
+            if linkmatch:
+                linkuri   = linkmatch.group(1)
+            for linkparam in linkparts[1:]:
+                linkmatch = re.match(r'''\s*rel\s*=\s*"?(.*?)"?\s*$''', linkparam)  # .*? is non-greedy
+                if linkmatch:
+                    linkrel = linkmatch.group(1)
+                    log.debug("parseLinks links[%s] = %s"%(linkrel, linkuri))
+                    links[linkrel] = rdflib.URIRef(linkuri)
+    return links
+
+def testParseLinks():
+    links = (
+        ('Link', '<http://example.org/foo>; rel=foo'),
+        ('Link', ' <http://example.org/bar> ; rel = bar '),
+        ('Link', '<http://example.org/bas>; rel=bas; par = zzz , <http://example.org/bat>; rel = bat'),
+        ('Link', ' <http://example.org/fie> ; par = fie '),
+        ('Link', ' <http://example.org/fum> ; rel = "http://example.org/rel/fum" '),
+        )
+    assert str(parseLinks(links)['foo']) == 'http://example.org/foo'
+    assert str(parseLinks(links)['bar']) == 'http://example.org/bar'
+    assert str(parseLinks(links)['bas']) == 'http://example.org/bas'
+    assert str(parseLinks(links)['bat']) == 'http://example.org/bat'
+    assert str(parseLinks(links)['http://example.org/rel/fum']) == 'http://example.org/fum'
+
 # Class for handling ROSRS access
 
 class ROSRS_Session(object):
@@ -76,17 +153,7 @@ class ROSRS_Session(object):
         """
         Parse link header(s), return dictionary of links keyed by link relation type
         """
-        linkvallist = [ v for (h,v) in headers["_headerlist"] if h == "link" ]
-        log.debug("parseLinks linkvallist %s"%(repr(linkvallist)))
-        links = {}
-        for linkval in linkvallist:
-            # <http://sandbox.wf4ever-project.org/rodl/ROs/TestAggregateRO/test/path>; rel=http://www.openarchives.org/ore/terms/proxyFor
-            # @@TODO: This regex might be fragile if more Link parameters are present
-            linkmatch = re.match(r'''\s*<([^>]*)>\s*;\s*rel\s*=\s*"?([^"]*)"?''', linkval)
-            if linkmatch:
-                log.debug("parseLinks [%s] = %s"%(linkmatch.group(2), linkmatch.group(1)))
-                links[linkmatch.group(2)] = rdflib.URIRef(linkmatch.group(1))
-        return links
+        return parseLinks(headers["_headerlist"])
 
     def doRequest(self, uripath, method="GET", body=None, ctype=None, accept=None, reqheaders=None):
         """
@@ -319,6 +386,8 @@ class ROSRS_Session(object):
                             "%d03 %s (%s)"%(status, reason, respath))
         proxyuri = rdflib.URIRef(headers["location"])
         links    = self.parseLinks(headers)
+        log.debug("- links: "+repr(links))
+        log.debug("- ORE.proxyFor: "+str(ORE.proxyFor))
         if str(ORE.proxyFor) not in links:
             raise self.error("No ore:proxyFor link in create proxy response",
                             "Proxy URI %s"%str(proxyuri))

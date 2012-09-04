@@ -580,8 +580,8 @@ class TestApi_ROSRS(unittest.TestCase):
         links    = self.rosrs.parseLinks(headers)
         aresuri  = links[str(AO.annotatesResource)]
         abodyuri = links[str(AO.annotationBody)]
-        self.assertEqual(aresuri,str(resuri))
-        self.assertEqual(abodyuri,str(bodyuri))
+        self.assertEqual(aresuri,resuri)
+        self.assertEqual(abodyuri,bodyuri)
         # Create another annotation (shortcut sequence)
         reqheaders = {
             "Link": '''"<%s>; rel="%s"'''%(str(resuri), str(AO.annotates) ),
@@ -599,7 +599,7 @@ class TestApi_ROSRS(unittest.TestCase):
             """
         (status, reason, headers, data) = self.rosrs.doRequest(rouri,
             method="POST",
-            ctype="application/rdf+xml", headers=reqheaders,
+            ctype="application/rdf+xml", reqheaders=reqheaders,
             body=annotation)
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
@@ -628,7 +628,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "application/rdf+xml")
         # Scan the manifest for annotations of test/file.txt (resuri)
-        auris = manifest.subjects(predicate=AO.annotates,object=resuri)
+        auris = manifest.subjects(predicate=AO.annotatesResource,object=resuri)
         agraph = rdflib.graph.Graph()
         for a in auris:
             buri = manifest.value(subject=a, predicate=AO.body)

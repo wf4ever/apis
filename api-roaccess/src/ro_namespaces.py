@@ -57,6 +57,8 @@ AO = makeNamespace(ao,
             [ "Annotation"
             , "body"
             , "annotatesResource"
+            , "annotationBody"  # @@TODO: remove this - temporary bug workaround
+            , "annotates"  # @@TODO: remove this - temporary bug workaround
             ])
 DCTERMS = makeNamespace(dcterms,
             [ "identifier", "description", "title", "creator", "created"
