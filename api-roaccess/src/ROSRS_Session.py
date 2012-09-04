@@ -402,7 +402,7 @@ class ROSRS_Session(object):
 
     def aggregateResourceExt(self, rouri, resuri):
         """
-        Aggegate extternal resource
+        Aggegate external resource
         Return (status, reason, proxyuri, resuri), where status is 200 or 201
         """
         # Aggegate external resource: POST proxy ...
