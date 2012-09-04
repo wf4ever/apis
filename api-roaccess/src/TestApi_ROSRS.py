@@ -585,7 +585,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(abodyuri,bodyuri)
         # Create another annotation (shortcut sequence)
         reqheaders = {
-            "Link": '''"<%s>; rel="%s"'''%(str(resuri), str(AO.annotatesResource) ),
+            "Link": '''<%s>; rel="%s"'''%(str(resuri), str(AO.annotatesResource) ),
             "Slug": "test/ann_file2.rdf"
             }
         annbody = """<?xml version="1.0" encoding="UTF-8"?>
