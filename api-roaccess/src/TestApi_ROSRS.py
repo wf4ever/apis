@@ -847,8 +847,8 @@ class TestApi_ROSRS(unittest.TestCase):
         auris = [ a for (a,p) in manifest.subject_predicates(object=resuri)
                     if p in [AO.annotatesResource,RO.annotatesAggregatedResource] ]
         agraph = rdflib.graph.Graph()
-        for a in auris:
-            buri = manifest.value(subject=a, predicate=AO.body)
+        for auri in auris:
+            buri = manifest.value(subject=auri, predicate=AO.body)
             agraph.parse(buri)
         log.debug("- final agraph:\n"+agraph.serialize(format='xml'))
         self.assertIn((resuri, DCTERMS.title,   rdflib.Literal("Title for http://example.org/ext")),    agraph)
@@ -858,6 +858,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.rosrs.deleteRO("TestAnnotateRO/")
         return
 
+    @unittest.skip("Awaiting fix for RODL update annotation")
     def testUpdateROAnnotationInt(self):
         # Clean up from previous runs
         self.rosrs.deleteRO("TestAnnotateRO/")
@@ -975,8 +976,8 @@ class TestApi_ROSRS(unittest.TestCase):
         auris = [ a for (a,p) in manifest.subject_predicates(object=resuri)
                     if p in [AO.annotatesResource,RO.annotatesAggregatedResource] ]
         agraph = rdflib.graph.Graph()
-        for a in auris:
-            buri = manifest.value(subject=a, predicate=AO.body)
+        for auri in auris:
+            buri = manifest.value(subject=auri, predicate=AO.body)
             log.debug("- auri: %s, buri %s"%(str(auri), str(buri)))
             agraph.parse(buri)
         log.debug("- final agraph:\n"+agraph.serialize(format='xml'))
@@ -987,7 +988,105 @@ class TestApi_ROSRS(unittest.TestCase):
         return
 
     def testRemoveROAnnotation(self):
+        # Clean up from previous runs
+        self.rosrs.deleteRO("TestAnnotateRO/")
+        # Create test RO
+        (status, reason, rouri, manifest) = self.rosrs.createRO("TestAnnotateRO",
+            "Test RO for annotating resourcess", "TestApi_ROSRS.py", "2012-06-29")
+        self.assertEqual(status, 201)
+        # Create internal test resource
+        rescontent = "Resource content\n"
+        (status, reason, proxyuri, resuri) = self.rosrs.aggregateResourceInt(
+            rouri, "test/file.txt", ctype="text/plain", body=rescontent)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        # Create annotation body
+        annbody = """<?xml version="1.0" encoding="UTF-8"?>
+            <rdf:RDF
+               xmlns:dct="http://purl.org/dc/terms/"
+               xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+               xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+               xml:base="%s"
+            >
+              <rdf:Description rdf:about="test/file.txt">
+                <dct:title>Title 1</dct:title>
+              </rdf:Description>
+            </rdf:RDF>
+            """%(str(rouri))
+        (status, reason, bodyproxyuri, bodyuri) = self.rosrs.aggregateResourceInt(
+            rouri, "test/ann_file1.rdf",
+            ctype="application/rdf+xml",
+            body=annbody)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        self.assertEqual(str(bodyuri),str(rouri)+"test/ann_file1.rdf")
+        # Create annotation
+        annotation1 = """<?xml version="1.0" encoding="UTF-8"?>
+            <rdf:RDF
+               xmlns:ro="http://purl.org/wf4ever/ro#"
+               xmlns:ao="http://purl.org/ao/"
+               xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+               xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+               xml:base="%s"
+            >
+               <ro:AggregatedAnnotation>
+                 <ao:annotatesResource rdf:resource="test/file.txt" />
+                 <ao:body rdf:resource="test/ann_file1.rdf" />
+               </ro:AggregatedAnnotation>
+            </rdf:RDF>
+            """%(str(rouri))
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="POST",
+            ctype="application/vnd.wf4ever.annotation",
+            body=annotation1)
+        self.assertEqual(status, 201)
+        self.assertEqual(reason, "Created")
+        annuri   = rdflib.URIRef(headers["location"])
+        links    = self.rosrs.parseLinks(headers)
+        aresuri  = links[str(AO.annotatesResource)]
+        abodyuri = links[str(AO.body)]
+        self.assertEqual(aresuri,resuri)
+        self.assertEqual(abodyuri,bodyuri)
+        # Access RO manifest
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertEqual(headers["content-type"], "application/rdf+xml")
+        # Scan the manifest for annotations
+        auris = [ a for (a,p) in manifest.subject_predicates(object=resuri)
+                    if p in [AO.annotatesResource,RO.annotatesAggregatedResource] ]
+        agraph = rdflib.graph.Graph()
+        for auri in auris:
+            buri = manifest.value(subject=auri, predicate=AO.body)
+            log.debug("- auri: %s, buri %s"%(str(auri), str(buri)))
+            agraph.parse(buri)
+        log.debug("- final agraph:\n"+agraph.serialize(format='xml'))
+        self.assertIn((resuri, DCTERMS.title, rdflib.Literal("Title 1")), agraph)
+        # Remove the annotation
+        (status, reason, headers, data) = self.rosrs.doRequest(annuri,
+            method="DELETE")
+        self.assertEqual(status, 204)
+        self.assertEqual(reason, "No Content")
+        # Access RO manifest
+        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        self.assertEqual(status, 200)
+        self.assertEqual(reason, "OK")
+        self.assertEqual(headers["content-type"], "application/rdf+xml")
+        # Scan the manifest for annotations
+        auris = [ a for (a,p) in manifest.subject_predicates(object=resuri)
+                    if p in [AO.annotatesResource,RO.annotatesAggregatedResource] ]
+        agraph = rdflib.graph.Graph()
+        for auri in auris:
+            buri = manifest.value(subject=auri, predicate=AO.body)
+            log.debug("- auri: %s, buri %s"%(str(auri), str(buri)))
+            agraph.parse(buri)
+        log.debug("- final agraph:\n"+agraph.serialize(format='xml'))
+        self.assertNotIn((resuri, DCTERMS.title, rdflib.Literal("Title 1")), agraph)
+        # Clean up
+        self.rosrs.deleteRO("TestAnnotateRO/")
         return
+
+    #@@TODO move these to separate test suite
 
     def testCopyRO(self):
         return
@@ -1054,10 +1153,11 @@ def getTestSuite(select="unit"):
             , "testCreateROAnnotationExt"
             , "testUpdateROAnnotationInt"
             , "testRemoveROAnnotation"
-            , "testCopyRO"
-            , "testCancelCopyRO"
-            , "testUpdateROStatus"
-            , "testGetROEvolution"
+            #@@TODO move these to separate test suite
+            #, "testCopyRO"
+            #, "testCancelCopyRO"
+            #, "testUpdateROStatus"
+            #, "testGetROEvolution"
             ],
         "component":
             [ "testComponents"
