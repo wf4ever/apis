@@ -14,6 +14,32 @@ from ro_namespaces import RDF, ORE, RO, DCTERMS
 # Logging object
 log = logging.getLogger(__name__)
 
+# Annotation content types
+
+ANNOTATION_CONTENT_TYPES = (
+    { "application/rdf+xml":    "xml"
+    , "text/turtle":            "n3"
+    , "text/n3":                "n3"
+    , "text/nt":                "nt"
+    , "application/json":       "jsonld"
+    , "application/xhtml":      "rdfa"
+    })
+
+ANNOTATION_TEMPLATE = ("""<?xml version="1.0" encoding="UTF-8"?>
+    <rdf:RDF
+       xmlns:ro="http://purl.org/wf4ever/ro#"
+       xmlns:ao="http://purl.org/ao/"
+       xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+       xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#"
+       xml:base="%(xmlbase)s"
+    >
+       <ro:AggregatedAnnotation>
+         <ao:annotatesResource rdf:resource="%(resuri)s" />
+         <ao:body rdf:resource="%(bodyuri)s" />
+       </ro:AggregatedAnnotation>
+    </rdf:RDF>
+    """)
+
 # Class for ROSRS errors
 
 class ROSRS_Error(Exception):
@@ -34,10 +60,14 @@ class ROSRS_Error(Exception):
         return ( "ROSRS_Error(%s, value=%s, srsuri=%s)"%
                  (repr(self._msg), repr(self._value), repr(self._srsuri)))
 
-def splitValues(txt, sep=","):
+def splitValues(txt, sep=",", lq='"<', rq='">'):
     """
     Helper function returns list of delimited values in a string,
     where delimiters in quotes are protected.
+
+    sep is string of separator
+    lq is string of opening quotes for strings within which separators are not recognized
+    rq is string of corresponding closing quotes
     
     @@TODO Is there a better way?  I tried using regexp, but grouping doesn't
     seem to offer a way to handle repeated elements.
@@ -46,16 +76,15 @@ def splitValues(txt, sep=","):
     cursor = 0
     begseg = cursor
     while cursor < len(txt):
-        if txt[cursor] == '"':
-            # Skip quoted string
+        if txt[cursor] in lq:
+            # Skip quoted or bracketed string
+            eq = rq[lq.index(txt[cursor])]  # End quote/bracket character
             cursor += 1
-            while cursor < len(txt) and txt[cursor] != '"':
-                # skip '\' quoted-pair
-                if txt[cursor] == '\\': cursor += 1
+            while cursor < len(txt) and txt[cursor] != eq:
+                if txt[cursor] == '\\': cursor += 1 # skip '\' quoted-pair
                 cursor += 1
-            # Skip closing quote
             if cursor < len(txt):
-                cursor += 1
+                cursor += 1 # Skip closing quote/bracket
         elif txt[cursor] in sep:
             result.append(txt[begseg:cursor])
             cursor += 1
@@ -72,6 +101,8 @@ def testSplitValues():
     assert splitValues('a, "b, c\\", c1", d') == ['a',' "b, c\\", c1"',' d']
     assert splitValues('a,"b,c",d', ";") == ['a,"b,c",d']
     assert splitValues('a;"b;c";d', ";") == ['a','"b;c"','d']
+    assert splitValues('a;<b;c>;d', ";") == ['a','<b;c>','d']
+    assert splitValues('"a;b";(c;d);e', ";", lq='"(', rq='")') == ['"a;b"','(c;d)','e']
 
 def parseLinks(headerlist):
     """
@@ -89,12 +120,12 @@ def parseLinks(headerlist):
             linkmatch = re.match(r'''\s*<([^>]*)>\s*''', linkparts[0])
             if linkmatch:
                 linkuri   = linkmatch.group(1)
-            for linkparam in linkparts[1:]:
-                linkmatch = re.match(r'''\s*rel\s*=\s*"?(.*?)"?\s*$''', linkparam)  # .*? is non-greedy
-                if linkmatch:
-                    linkrel = linkmatch.group(1)
-                    log.debug("parseLinks links[%s] = %s"%(linkrel, linkuri))
-                    links[linkrel] = rdflib.URIRef(linkuri)
+                for linkparam in linkparts[1:]:
+                    linkmatch = re.match(r'''\s*rel\s*=\s*"?(.*?)"?\s*$''', linkparam)  # .*? is non-greedy
+                    if linkmatch:
+                        linkrel = linkmatch.group(1)
+                        log.debug("parseLinks links[%s] = %s"%(linkrel, linkuri))
+                        links[linkrel] = rdflib.URIRef(linkuri)
     return links
 
 def testParseLinks():
@@ -104,12 +135,14 @@ def testParseLinks():
         ('Link', '<http://example.org/bas>; rel=bas; par = zzz , <http://example.org/bat>; rel = bat'),
         ('Link', ' <http://example.org/fie> ; par = fie '),
         ('Link', ' <http://example.org/fum> ; rel = "http://example.org/rel/fum" '),
+        ('Link', ' <http://example.org/fas;far> ; rel = "http://example.org/rel/fas" '),
         )
     assert str(parseLinks(links)['foo']) == 'http://example.org/foo'
     assert str(parseLinks(links)['bar']) == 'http://example.org/bar'
     assert str(parseLinks(links)['bas']) == 'http://example.org/bas'
     assert str(parseLinks(links)['bat']) == 'http://example.org/bat'
     assert str(parseLinks(links)['http://example.org/rel/fum']) == 'http://example.org/fum'
+    assert str(parseLinks(links)['http://example.org/rel/fas']) == 'http://example.org/fas;far'
 
 # Class for handling ROSRS access
 
@@ -206,6 +239,21 @@ class ROSRS_Session(object):
         log.debug("ROSRS_Session.doRequest data:     "+repr(data))
         return (status, reason, headers, data)
 
+    def doRequestFollowRedirect(self, uripath, method="GET", body=None, ctype=None, accept=None, reqheaders=None):
+        """
+        Perform HTTP request to ROSRS, following any redirect returned
+        Return status, reason(text), response headers, response body
+        """
+        (status, reason, headers, data) = self.doRequest(uripath,
+            method=method, accept=accept,
+            body=body, ctype=ctype, reqheaders=reqheaders)
+        if status == 303:
+            uri = headers["location"]
+            (status, reason, headers, data) = self.doRequest(uri,
+                method=method, accept=accept,
+                body=body, ctype=ctype, reqheaders=reqheaders)
+        return (status, reason, headers, data)
+
     def doRequestRDF(self, uripath, method="GET", body=None, ctype=None, reqheaders=None):
         """
         Perform HTTP request with RDF response.
@@ -229,6 +277,21 @@ class ROSRS_Session(object):
             else:
                 status   = 901
                 reason   = "Non-RDF content-type returned"
+        return (status, reason, headers, data)
+
+    def doRequestRDFFollowRedirect(self, uripath, method="GET", body=None, ctype=None, reqheaders=None):
+        """
+        Perform HTTP request to ROSRS, following any redirect returned
+        Return status, reason(text), response headers, response body
+        """
+        (status, reason, headers, data) = self.doRequestRDF(uripath,
+            method=method,
+            body=body, ctype=ctype, reqheaders=reqheaders)
+        if status == 303:
+            uri = headers["location"]
+            (status, reason, headers, data) = self.doRequestRDF(uri,
+                method=method,
+                body=body, ctype=ctype, reqheaders=reqheaders)
         return (status, reason, headers, data)
 
     def listROs(self):
@@ -317,59 +380,62 @@ class ROSRS_Session(object):
         Return (proxyuri, manifest)
         """
         (status, reason, headers, manifest) = self.getROManifest(rouri)
-        if status != 200:
-            raise self.error("Error retrieving RO manifest", "%d03 %s"%
+        if status not in [200,404]:
+            raise self.error("Error retrieving RO manifest", "%03d %s"%
                              (status, reason))
-        resuri = rdflib.URIRef(urlparse.urljoin(str(rouri), str(resuriref)))
-        proxyterms = list(manifest.subjects(predicate=ORE.proxyFor, object=resuri))
-        log.debug("getROResourceProxy proxyterms: %s"%(repr(proxyterms)))
         proxyuri = None
-        if len(proxyterms) == 1:
-            proxyuri = proxyterms[0]
-        return (proxyuri, manifest)
+        if status == 200:
+            resuri = rdflib.URIRef(urlparse.urljoin(str(rouri), str(resuriref)))
+            proxyterms = list(manifest.subjects(predicate=ORE.proxyFor, object=resuri))
+            log.debug("getROResourceProxy proxyterms: %s"%(repr(proxyterms)))
+            if len(proxyterms) == 1:
+                proxyuri = proxyterms[0]
+        return (status, reason, proxyuri, manifest)
 
     def getROManifest(self, rouri):
         """
         Retrieve an RO manifest
         Return (status, reason, headers, data), where status is 200 or 404
         """
-        (status, reason, headers, data) = self.doRequestRDF(rouri,
+        (status, reason, headers, data) = self.doRequestRDFFollowRedirect(rouri,
             method="GET")
-        if status == 303:
-            uri = headers["location"]
-            (status, reason, headers, data) = self.doRequestRDF(uri,
-                method="GET")
         if status in [200, 404]:
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO manifest",
-            "%d03 %s"%(status, reason))
+            "%03d %s"%(status, reason))
 
-    # def getROLandingPage(self, rouri):
+    def getROLandingPage(self, rouri):
+        """
+        Retrieve an RO landing page
+        Return (status, reason, headers, data), where status is 200 or 404
+        """
+        (status, reason, headers, data) = self.doRequestFollowRedirect(rouri,
+            method="GET", accept="text/html")
+        if status in [200, 404]:
+            return (status, reason, headers, data if status == 200 else None)
+        raise self.error("Error retrieving RO as ZIP file",
+            "%03d %s"%(status, reason))
 
     def getROZip(self, rouri):
         """
         Retrieve an RO as ZIP file
         Return (status, reason, headers, data), where status is 200 or 404
         """
-        (status, reason, headers, data) = self.doRequest(rouri,
+        (status, reason, headers, data) = self.doRequestFollowRedirect(rouri,
             method="GET", accept="application/zip")
-        if status == 303:
-            uri = headers["location"]
-            (status, reason, headers, data) = self.doRequest(uri,
-                method="GET", accept="application/zip")
         if status in [200, 404]:
             return (status, reason, headers, data if status == 200 else None)
         raise self.error("Error retrieving RO as ZIP file",
-            "%d03 %s"%(status, reason))
+            "%03d %s"%(status, reason))
 
-    def aggregateResourceInt(
-            self, rouri, respath, ctype="application/octet-stream", body=None):
+    def aggregateResourceInt(self,
+        rouri, respath=None, ctype="application/octet-stream", body=None):
         """
         Aggegate internal resource
         Return (status, reason, proxyuri, resuri), where status is 200 or 201
         """
         # POST (empty) proxy value to RO ...
-        reqheaders = { "slug": respath }
+        reqheaders = respath and { "slug": respath }
         proxydata = ("""
             <rdf:RDF
               xmlns:ore="http://www.openarchives.org/ore/terms/"
@@ -383,7 +449,7 @@ class ROSRS_Session(object):
             reqheaders=reqheaders, body=proxydata)
         if status != 201:
             raise self.error("Error creating aggregation proxy",
-                            "%d03 %s (%s)"%(status, reason, respath))
+                            "%03d %s (%s)"%(status, reason, respath))
         proxyuri = rdflib.URIRef(headers["location"])
         links    = self.parseLinks(headers)
         log.debug("- links: "+repr(links))
@@ -397,7 +463,7 @@ class ROSRS_Session(object):
             method="PUT", ctype=ctype, body=body)
         if status not in [200,201]:
             raise self.error("Error creating aggregated resource content",
-                "%d03 %s (%s)"%(status, reason, respath))
+                "%03d %s (%s)"%(status, reason, respath))
         return (status, reason, proxyuri, resuri)
 
     def aggregateResourceExt(self, rouri, resuri):
@@ -420,7 +486,7 @@ class ROSRS_Session(object):
             body=proxydata)
         if status != 201:
             raise self.error("Error creating aggregation proxy",
-                "%d03 %s (%s)"%(status, reason, str(resuri)))
+                "%03d %s (%s)"%(status, reason, str(resuri)))
         proxyuri = rdflib.URIRef(headers["location"])
         links    = self.parseLinks(headers)
         return (status, reason, proxyuri, rdflib.URIRef(resuri))
@@ -446,31 +512,192 @@ class ROSRS_Session(object):
                   (str(resuri), str(rouri), status, reason))
         assert status == 204
         return (status, reason)
+        assert false, "@@TODO - awaiting RODL fix for slug-less proxy"
+
+    def createROAnnotationBody(self, rouri, anngr):
+        """
+        Create an annotation body from a supplied annnotation graph.
+        
+        Returns: (status, reason, bodyuri)
+        """
+        assert false, "@@TODO - awaiting RODL fix for slug-less proxy"
+        # Create annotation body
+        (status, reason, bodyproxyuri, bodyuri) = self.aggregateResourceInt(
+            ctype="application/rdf+xml",
+            body=anngr.serialize(format="xml"))
+        if status != 201:
+            raise self.error("Error creating annotation body resource",
+                "%03d %s (%s)"%(status, reason, str(resuri)))
+        return (status, reason, bodyuri)
+
+    def createAnnotationRDF(self, rouri, resuri, bodyuri):
+        """
+        Create entity body for annotation
+        """
+        annotation = (ANNOTATION_TEMPLATE%
+            { "xmlbase": str(rouri)
+            , "resuri": str(resuri)
+            , "bodyuri": str(bodyuri)
+            })
+        return annotation
+
+    def createROAnnotation(self, rouri, resuri, bodyuri):
+        """
+        Create an annotation for supplied resource using imndiocated body
+        
+        Returns: (status, reason, annuri)
+        """
+        annotation = self.createAnnotationRDF(rouri, resuri, bodyuri)
+        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+            method="POST",
+            ctype="application/vnd.wf4ever.annotation",
+            body=annotation)
+        if status != 201:
+            raise self.error("Error creating annotation",
+                "%03d %s (%s)"%(status, reason, str(resuri)))
+        annuri   = rdflib.URIRef(headers["location"])
+        return (status, reason, annuri)
 
     def createROAnnotationInt(self, rouri, resuri, anngr):
-        assert False, "@@TODO"
+        """
+        Create internal annotation
+        
+        Return (status, reason, annuri, bodyuri)
+        """
+        assert False, "@@TODO - awaiting RODL fix for slug-less proxy"
+        (status, reason, bodyuri) = self.createROAnnotationBody(rouri, anngr)
+        if status == 201:
+            (status, reason, annuri) = self.createROAnnotation(rouri, resuri, bodyuri)
         return (status, reason, annuri, bodyuri)
 
     def createROAnnotationExt(self, rouri, resuri, bodyuri):
-        assert False, "@@TODO"
+        """
+        Creeate a resource annotation using an existing (possibly external) annotation body
+        
+        Returns: (status, reason, annuri)
+        """
+        (status, reason, annuri) = self.createROAnnotation(rouri, resuri, bodyuri)
         return (status, reason, annuri)
 
-    def updateROAnnotationInt(self, rouri, annuri, bodyuri):
-        assert False, "@@TODO"
-        return (status, reason, annuri, )
+    def updateROAnnotation(self, rouri, annuri, resuri, bodyuri):
+        """
+        Update an indicated annotation for supplied resource using indiocated body
+        
+        Returns: (status, reason)
+        """
+        annotation = self.createAnnotationRDF(rouri, resuri, bodyuri)
+        (status, reason, headers, data) = self.rosrs.doRequest(annuri,
+            method="PUT",
+            ctype="application/vnd.wf4ever.annotation",
+            body=annotation)
+        if status != 200:
+            raise self.error("Error updating annotation",
+                "%03d %s (%s)"%(status, reason, str(resuri)))
+        return (status, reason)
 
-    def getROResourceAnnotations(self, rouri, resuri):
-        assert False, "@@TODO"
-        yield annuri
+    def updateROAnnotationInt(self, rouri, annuri, resuri, anngr):
+        """
+        Update an annotation with a new internal annotation body
+
+        returns: (status, reason, bodyuri)
+        """
+        assert false, "@@TODO - awaiting RODL fix for slug-less proxy"
+        (status, reason, bodyuri) = self.createROAnnotationBody(rouri, anngr)
+        assert status == 201
+        (status, reason) = self.updateROAnnotation(rouri, annuri, resuri, bodyuri)
+        return (status, reason, bodyuri)
+
+    def updateROAnnotationExt(self, rouri, annuri, bodyuri):
+        """
+        Update an annotation with an existing (possibly external) annotation body
+
+        returns: (status, reason)
+        """
+        (status, reason) = self.updateROAnnotation(rouri, annuri, resuri, bodyuri)
+        return (status, reason)
+
+    def getROAnnotationUris(self, rouri, resuri=None):
+        """
+        Enumerate annnotation URIs associated with a resource
+        (or all annotations for an RO) 
+        
+        Returns an iterator over annotation URIs
+        """
+        (status, reason, headers, manifest) = self.getROManifest(rouri)
+        if status != 200:
+            raise self.error("No manifest",
+                "%03d %s (%s)"%(status, reason, str(rouri)))
+        for (a,p) in manifest.subject_predicates(object=resuri):
+            # @@TODO: in due course, remove RO.annotatesAggregatedResource?
+            if p in [AO.annotatesResource,RO.annotatesAggregatedResource]:
+                yield a
+        return
+
+    def getROAnnotationBodyUris(self, rouri, resuri=None):
+        """
+        Enumerate annnotation body URIs associated with a resource
+        (or all annotations for an RO) 
+        
+        Returns an iterator over annotation URIs
+        """
+        for annuri in self.getROResourceAnnotations(rouri, resuri):
+            yield self.getROResourceAnnotationBodyUri(annuri)
+        return
+
+    def getROAnnotationGraph(self, rouri, resuri=None):
+        """
+        Build RDF graph of annnotations associated with a resource
+        (or all annotations for an RO) 
+        
+        Returns agraph
+        """
+        agraph = rdflib.graph.Graph()
+        for auri in self.getROResourceAnnotations(rouri, resuri):
+            (status, reason, headers, bodytext) = self.getROResourceFollowRedirect(auri)
+            if status == 200:
+                content_type, params = headers['content-type'].split(";", 1)
+                content_type = content_type.strip().lower()
+                if content_type in ANNOTATION_CONTENT_TYPES:
+                    bodyformat = ANNOTATION_CONTENT_TYPES[content_type]
+                    agraph.parse(data=bodytext, format=bodyformat)
+                else:
+                    log.warn("getROResourceAnnotationGraph: %s has unrecognized content-type: %s"%(str(buri),content_type))
+            else:
+                log.warn("getROResourceAnnotationGraph: %s read failure: %03d %s"%(str(buri), status, reason))
+        return agraph
+
+    def getROAnnotationBodyUri(self, annuri):
+        """
+        # Retrieve annotation for given annotation URI
+        """
+        (status, reason, headers, anngr) = self.getROResource(annuri)
+        if status != 303:
+            raise self.error("No redirect from annnotation URI",
+                "%03d %s (%s)"%(status, reason, str(rouri)))
+        return rdflib.URIRef(headers['location'])
 
     def getROAnnotation(self, annuri):
-        assert False, "@@TODO"
+        """
+        Retrieve annotation for given annotation URI
+        
+        Returns: (status, reason, anngr)
+        """
+        (status, reason, headers, anngr) = self.getROResourceRDFFollowRedirect(annuri)
         return (status, reason, anngr)
 
     def removeROAnnotation(self, rouri, annuri):
-        assert False, "@@TODO"
+        """
+        Remove annotation at given annotation URI
+        
+        Returns: (status, reason)
+        """
+        (status, reason, headers, data) = self.doRequest(annuri,
+            method="DELETE")
         return (status, reason)
 
+    # ---------------------------------------------
+    # RO Evolution
+    # ---------------------------------------------
     # See: http://www.wf4ever-project.org/wiki/display/docs/RO+evolution+API
 
     # Need to fugure out how deferred values can work, associated with copyuri
