@@ -108,7 +108,7 @@ class TestROSRS_Session(unittest.TestCase):
         (status, reason, rouri, manifest) = self.createTestRO()
         self.assertEqual(status, 201)
         # Get manifest
-        (status, reason, headers, manifest) = self.rosrs.getManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "application/rdf+xml")
@@ -122,8 +122,8 @@ class TestROSRS_Session(unittest.TestCase):
     def testGetROPage(self):
         (status, reason, rouri, manifest) = self.createTestRO()
         self.assertEqual(status, 201)
-        # Get manifest
-        (status, reason, headers, manifest) = self.rosrs.getRoLandingPage(rouri)
+        # Get landing page
+        (status, reason, headers, pageuri, page) = self.rosrs.getROLandingPage(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "text/html;charset=UTF-8")
@@ -133,7 +133,7 @@ class TestROSRS_Session(unittest.TestCase):
         (status, reason, rouri, manifest) = self.createTestRO()
         self.assertEqual(status, 201)
         # Get manifest
-        (status, reason, headers, data) = self.rosrs.getRoZip(rouri)
+        (status, reason, headers, datauri, data) = self.rosrs.getROZip(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "application/zip")

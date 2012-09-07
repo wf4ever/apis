@@ -9,7 +9,7 @@ import urlparse
 import rdflib, rdflib.graph
 import logging
 
-from ro_namespaces import RDF, ORE, RO, DCTERMS
+from ro_namespaces import RDF, ORE, RO, AO, DCTERMS
 
 # Logging object
 log = logging.getLogger(__name__)
@@ -195,9 +195,7 @@ class ROSRS_Session(object):
         """
         # Sort out path to use in HTTP request: request may be path or full URI or rdflib.URIRef
         uripath = str(uripath)        # get URI string from rdflib.URIRef
-        log.debug("ROSRS_Session.doRequest uripath:  "+str(uripath))
         uriparts = urlparse.urlsplit(urlparse.urljoin(self._srspath,uripath))
-        log.debug("ROSRS_Session.doRequest uriparts: "+str(uriparts))
         if uriparts.scheme:
             if self._srsscheme != uriparts.scheme:
                 raise ROSRS_Error(
@@ -234,6 +232,7 @@ class ROSRS_Session(object):
         headers  = dict(headerlist)   # dict(...) keeps last result of multiple keys
         headers["_headerlist"] = headerlist
         data = response.read()
+        if status < 200 or status >= 300: data = None
         log.debug("ROSRS_Session.doRequest response: "+str(status)+" "+reason)
         log.debug("ROSRS_Session.doRequest headers:  "+repr(headers))
         log.debug("ROSRS_Session.doRequest data:     "+repr(data))
@@ -242,17 +241,23 @@ class ROSRS_Session(object):
     def doRequestFollowRedirect(self, uripath, method="GET", body=None, ctype=None, accept=None, reqheaders=None):
         """
         Perform HTTP request to ROSRS, following any redirect returned
-        Return status, reason(text), response headers, response body
+        Return status, reason(text), response headers, final uri, response body
         """
         (status, reason, headers, data) = self.doRequest(uripath,
             method=method, accept=accept,
             body=body, ctype=ctype, reqheaders=reqheaders)
-        if status == 303:
-            uri = headers["location"]
-            (status, reason, headers, data) = self.doRequest(uri,
+        if status in [302,303,307]:
+            uripath = headers["location"]
+            (status, reason, headers, data) = self.doRequest(uripath,
                 method=method, accept=accept,
                 body=body, ctype=ctype, reqheaders=reqheaders)
-        return (status, reason, headers, data)
+        if status == 302:
+            # Allow second temporary redirect
+            uripath = headers["location"]
+            (status, reason, headers, data) = self.doRequest(uripath,
+                method=method,
+                body=body, ctype=ctype, reqheaders=reqheaders)
+        return (status, reason, headers, rdflib.URIRef(uripath), data)
 
     def doRequestRDF(self, uripath, method="GET", body=None, ctype=None, reqheaders=None):
         """
@@ -282,17 +287,17 @@ class ROSRS_Session(object):
     def doRequestRDFFollowRedirect(self, uripath, method="GET", body=None, ctype=None, reqheaders=None):
         """
         Perform HTTP request to ROSRS, following any redirect returned
-        Return status, reason(text), response headers, response body
+        Return status, reason(text), response headers, final uri, response body
         """
         (status, reason, headers, data) = self.doRequestRDF(uripath,
             method=method,
             body=body, ctype=ctype, reqheaders=reqheaders)
-        if status == 303:
-            uri = headers["location"]
-            (status, reason, headers, data) = self.doRequestRDF(uri,
+        if status in [302,303,307]:
+            uripath = headers["location"]
+            (status, reason, headers, data) = self.doRequestRDF(uripath,
                 method=method,
                 body=body, ctype=ctype, reqheaders=reqheaders)
-        return (status, reason, headers, data)
+        return (status, reason, headers, rdflib.URIRef(uripath), data)
 
     def listROs(self):
         """
@@ -349,15 +354,15 @@ class ROSRS_Session(object):
     def getROResource(self, resuriref, rouri=None, accept=None, reqheaders=None):
         """
         Retrieve resource from RO
-        Return (status, reason, headers, data), where status is 200 or 404
+        Return (status, reason, headers, data), where status is 200 or 404 or redirect code
         """
         resuri = str(resuriref)
         if rouri:
             resuri = urlparse.urljoin(str(rouri), resuri)
-        (status, reason, headers, data) = self.doRequest(resuri,
+        (status, reason, headers, uri, data) = self.doRequestFollowRedirect(resuri,
             method="GET", accept=accept, reqheaders=reqheaders)
         if status in [200, 404]:
-            return (status, reason, headers, data if status == 200 else None)
+            return (status, reason, headers, uri, data)
         raise self.error("Error retrieving RO resource", "%03d %s (%s)"%(status, reason, resuriref))
 
     def getROResourceRDF(self, resuriref, rouri=None, reqheaders=None):
@@ -368,18 +373,18 @@ class ROSRS_Session(object):
         resuri = str(resuriref)
         if rouri:
             resuri = urlparse.urljoin(str(rouri), resuri)
-        (status, reason, headers, data) = self.doRequestRDF(resuri,
+        (status, reason, headers, uri, data) = self.doRequestRDFFollowRedirect(resuri,
             method="GET", reqheaders=reqheaders)
         if status in [200, 404]:
-            return (status, reason, headers, data if status == 200 else None)
-        raise self.error("Error retrieving RO resource", "%03d %s (%s)"%(status, reason, resuriref))
+            return (status, reason, headers, uri, data)
+        raise self.error("Error retrieving RO RDF resource", "%03d %s (%s)"%(status, reason, resuriref))
 
     def getROResourceProxy(self, resuriref, rouri):
         """
         Retrieve proxy description for resource.
         Return (proxyuri, manifest)
         """
-        (status, reason, headers, manifest) = self.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.getROManifest(rouri)
         if status not in [200,404]:
             raise self.error("Error retrieving RO manifest", "%03d %s"%
                              (status, reason))
@@ -395,25 +400,25 @@ class ROSRS_Session(object):
     def getROManifest(self, rouri):
         """
         Retrieve an RO manifest
-        Return (status, reason, headers, data), where status is 200 or 404
+        Return (status, reason, headers, uri, data), where status is 200 or 404
         """
-        (status, reason, headers, data) = self.doRequestRDFFollowRedirect(rouri,
+        (status, reason, headers, uri, data) = self.doRequestRDFFollowRedirect(rouri,
             method="GET")
         if status in [200, 404]:
-            return (status, reason, headers, data if status == 200 else None)
+            return (status, reason, headers, uri, data)
         raise self.error("Error retrieving RO manifest",
             "%03d %s"%(status, reason))
 
     def getROLandingPage(self, rouri):
         """
         Retrieve an RO landing page
-        Return (status, reason, headers, data), where status is 200 or 404
+        Return (status, reason, headers, uri, data), where status is 200 or 404
         """
-        (status, reason, headers, data) = self.doRequestFollowRedirect(rouri,
+        (status, reason, headers, uri, data) = self.doRequestFollowRedirect(rouri,
             method="GET", accept="text/html")
         if status in [200, 404]:
-            return (status, reason, headers, data if status == 200 else None)
-        raise self.error("Error retrieving RO as ZIP file",
+            return (status, reason, headers, uri, data)
+        raise self.error("Error retrieving RO landing page",
             "%03d %s"%(status, reason))
 
     def getROZip(self, rouri):
@@ -421,10 +426,10 @@ class ROSRS_Session(object):
         Retrieve an RO as ZIP file
         Return (status, reason, headers, data), where status is 200 or 404
         """
-        (status, reason, headers, data) = self.doRequestFollowRedirect(rouri,
+        (status, reason, headers, uri, data) = self.doRequestFollowRedirect(rouri,
             method="GET", accept="application/zip")
         if status in [200, 404]:
-            return (status, reason, headers, data if status == 200 else None)
+            return (status, reason, headers, uri, data)
         raise self.error("Error retrieving RO as ZIP file",
             "%03d %s"%(status, reason))
 
@@ -497,22 +502,14 @@ class ROSRS_Session(object):
         return (status, reason), where status is 204 No content or 404 Not found
         """
         # Find proxy for resource
-        (proxyuri, manifest) = self.getROResourceProxy(resuri, rouri)
-        if proxyuri == None: return (404, "Not Found")
+        (status, reason, proxyuri, manifest) = self.getROResourceProxy(resuri, rouri)
+        if status != 200:
+            return (status, reason)
         assert isinstance(proxyuri, rdflib.URIRef)
         # Delete proxy
-        (status, reason, headers, data) = self.doRequest(proxyuri,
+        (status, reason, headers, uri, data) = self.doRequestFollowRedirect(proxyuri,
             method="DELETE")
-        if status == 307:
-            # Redirect to internal resource: delete that
-            assert headers["location"] == str(resuri)
-            (status, reason, headers, data) = self.doRequest(resuri,
-                method="DELETE")
-        log.debug("removeResource %s from %s: status %d, reason %s"%
-                  (str(resuri), str(rouri), status, reason))
-        assert status == 204
         return (status, reason)
-        assert false, "@@TODO - awaiting RODL fix for slug-less proxy"
 
     def createROAnnotationBody(self, rouri, anngr):
         """
@@ -520,9 +517,8 @@ class ROSRS_Session(object):
         
         Returns: (status, reason, bodyuri)
         """
-        assert false, "@@TODO - awaiting RODL fix for slug-less proxy"
         # Create annotation body
-        (status, reason, bodyproxyuri, bodyuri) = self.aggregateResourceInt(
+        (status, reason, bodyproxyuri, bodyuri) = self.aggregateResourceInt(rouri,
             ctype="application/rdf+xml",
             body=anngr.serialize(format="xml"))
         if status != 201:
@@ -548,7 +544,7 @@ class ROSRS_Session(object):
         Returns: (status, reason, annuri)
         """
         annotation = self.createAnnotationRDF(rouri, resuri, bodyuri)
-        (status, reason, headers, data) = self.rosrs.doRequest(rouri,
+        (status, reason, headers, data) = self.doRequest(rouri,
             method="POST",
             ctype="application/vnd.wf4ever.annotation",
             body=annotation)
@@ -564,7 +560,6 @@ class ROSRS_Session(object):
         
         Return (status, reason, annuri, bodyuri)
         """
-        assert False, "@@TODO - awaiting RODL fix for slug-less proxy"
         (status, reason, bodyuri) = self.createROAnnotationBody(rouri, anngr)
         if status == 201:
             (status, reason, annuri) = self.createROAnnotation(rouri, resuri, bodyuri)
@@ -586,7 +581,7 @@ class ROSRS_Session(object):
         Returns: (status, reason)
         """
         annotation = self.createAnnotationRDF(rouri, resuri, bodyuri)
-        (status, reason, headers, data) = self.rosrs.doRequest(annuri,
+        (status, reason, headers, data) = self.doRequest(annuri,
             method="PUT",
             ctype="application/vnd.wf4ever.annotation",
             body=annotation)
@@ -623,7 +618,7 @@ class ROSRS_Session(object):
         
         Returns an iterator over annotation URIs
         """
-        (status, reason, headers, manifest) = self.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.getROManifest(rouri)
         if status != 200:
             raise self.error("No manifest",
                 "%03d %s (%s)"%(status, reason, str(rouri)))
@@ -640,9 +635,21 @@ class ROSRS_Session(object):
         
         Returns an iterator over annotation URIs
         """
-        for annuri in self.getROResourceAnnotations(rouri, resuri):
-            yield self.getROResourceAnnotationBodyUri(annuri)
+        for annuri in self.getROAnnotationUris(rouri, resuri):
+            yield self.getROAnnotationBodyUri(annuri)
         return
+
+    def getROAnnotationBodyUri(self, annuri):
+        """
+        # Retrieve annotation for given annotation URI
+        """
+        (status, reason, headers, anngr) = self.getROResourceRDF(annuri)
+        bodyuri = anngr.value(subject=annuri, predicate=AO.body)
+        return bodyuri
+        #if status != 303:
+        #    raise self.error("No redirect from annnotation URI",
+        #        "%03d %s (%s)"%(status, reason, str(rouri)))
+        #return rdflib.URIRef(headers['location'])
 
     def getROAnnotationGraph(self, rouri, resuri=None):
         """
@@ -653,7 +660,7 @@ class ROSRS_Session(object):
         """
         agraph = rdflib.graph.Graph()
         for auri in self.getROResourceAnnotations(rouri, resuri):
-            (status, reason, headers, bodytext) = self.getROResourceFollowRedirect(auri)
+            (status, reason, headers, uri, bodytext) = self.getROResourceFollowRedirect(auri)
             if status == 200:
                 content_type, params = headers['content-type'].split(";", 1)
                 content_type = content_type.strip().lower()
@@ -666,24 +673,14 @@ class ROSRS_Session(object):
                 log.warn("getROResourceAnnotationGraph: %s read failure: %03d %s"%(str(buri), status, reason))
         return agraph
 
-    def getROAnnotationBodyUri(self, annuri):
-        """
-        # Retrieve annotation for given annotation URI
-        """
-        (status, reason, headers, anngr) = self.getROResource(annuri)
-        if status != 303:
-            raise self.error("No redirect from annnotation URI",
-                "%03d %s (%s)"%(status, reason, str(rouri)))
-        return rdflib.URIRef(headers['location'])
-
     def getROAnnotation(self, annuri):
         """
         Retrieve annotation for given annotation URI
         
-        Returns: (status, reason, anngr)
+        Returns: (status, reason, bodyuri, anngr)
         """
-        (status, reason, headers, anngr) = self.getROResourceRDFFollowRedirect(annuri)
-        return (status, reason, anngr)
+        (status, reason, headers, uri, anngr) = self.getROResourceRDF(annuri)
+        return (status, reason, uri, anngr)
 
     def removeROAnnotation(self, rouri, annuri):
         """

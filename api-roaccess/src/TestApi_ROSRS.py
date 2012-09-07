@@ -256,7 +256,7 @@ class TestApi_ROSRS(unittest.TestCase):
         ####self.assertEqual(status, 200)
         ####self.assertEqual(reason, "OK")
         # Read manifest and check aggregated resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertIn( (rouri, ORE.aggregates, resuri), manifest )
@@ -285,7 +285,7 @@ class TestApi_ROSRS(unittest.TestCase):
         resuri   = links[str(ORE.proxyFor)]
         self.assertEqual(str(resuri),str(rouri)+"test/path")
         # Read manifest and check aggregated resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertIn( (rouri, ORE.aggregates, resuri), manifest )
@@ -315,7 +315,7 @@ class TestApi_ROSRS(unittest.TestCase):
         log.debug("testDeleteResourceInt proxyuri: %s"%str(proxyuri))
         log.debug("testDeleteResourceInt   resuri: %s"%str(resuri))
         # Find proxy for resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         query = (
             "SELECT ?p WHERE "
@@ -343,7 +343,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 204)
         self.assertEqual(reason, "No Content")
         # Check that resource is no longer available
-        (status, reason, headers, data) = self.rosrs.getROResource(resuri)
+        (status, reason, headers, uri, data) = self.rosrs.getROResource(resuri)
         self.assertEqual(status, 404)
         # Clean up
         self.rosrs.deleteRO("TestAggregateRO/")
@@ -358,7 +358,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 201)
         externaluri = rdflib.URIRef("http://example.com/external/resource.txt")
         # Read manifest and check aggregated resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertNotIn((rouri, ORE.aggregates, externaluri), manifest)
@@ -382,7 +382,7 @@ class TestApi_ROSRS(unittest.TestCase):
         resuri   = links[str(ORE.proxyFor)]
         self.assertEqual(str(resuri),str(externaluri))
         # Read manifest and check aggregated resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertIn((rouri, ORE.aggregates, externaluri), manifest)
@@ -405,7 +405,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(reason, "Created")
         self.assertEqual(resuri, externaluri)
         # Find proxy for resource
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         query = (
             "SELECT ?p WHERE "
@@ -452,7 +452,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
         # Get resource content
-        (status, reason, headers, data)= self.rosrs.getROResource(
+        (status, reason, headers, uri, data)= self.rosrs.getROResource(
             "test/path", rouri=rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
@@ -485,7 +485,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
         # Get resource content
-        (status, reason, headers, graph)= self.rosrs.getROResourceRDF(
+        (status, reason, headers, uri, graph)= self.rosrs.getROResourceRDF(
             "test/file1.rdf", rouri=rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
@@ -757,7 +757,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
         proxyuri = rdflib.URIRef(headers["location"])
-        links    = self.parseLinks(headers)
+        links    = self.rosrs.parseLinks(headers)
         if str(ORE.proxyFor) not in links:
             raise self.error("No ore:proxyFor link in create proxy response",
                             "Proxy URI %s"%str(proxyuri))
@@ -776,7 +776,7 @@ class TestApi_ROSRS(unittest.TestCase):
               </rdf:Description>
             </rdf:RDF>
             """%(str(rouri))
-        (status, reason, headers, data) = self.doRequest(annbodyuri,
+        (status, reason, headers, data) = self.rosrs.doRequest(annbodyuri,
             method="PUT", ctype="application/rdf+xml", body=annbody)
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
@@ -1007,7 +1007,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         # Access RO manifest
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "application/rdf+xml")
@@ -1087,7 +1087,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(aresuri,resuri)
         self.assertEqual(abodyuri,bodyuri)
         # Access RO manifest
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "application/rdf+xml")
@@ -1107,7 +1107,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 204)
         self.assertEqual(reason, "No Content")
         # Access RO manifest
-        (status, reason, headers, manifest) = self.rosrs.getROManifest(rouri)
+        (status, reason, headers, manifesturi, manifest) = self.rosrs.getROManifest(rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
         self.assertEqual(headers["content-type"], "application/rdf+xml")
