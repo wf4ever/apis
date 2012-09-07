@@ -151,7 +151,7 @@ class TestROSRS_Session(unittest.TestCase):
         self.assertEqual(reason, "Created")
         self.assertEqual(str(resuri), str(rouri)+"test/path")
         # GET content
-        (status, reason, headers, data) = self.rosrs.getROResource(
+        (status, reason, headers, uri, data) = self.rosrs.getROResource(
             "test/path", rouri)
         self.assertEqual(status, 200)
         self.assertEqual(headers["content-type"], "text/plain")
@@ -172,7 +172,7 @@ class TestROSRS_Session(unittest.TestCase):
             rouri, "test/path", ctype="text/plain", body=rescontent)
         self.assertEqual(status, 201)
         # GET content
-        (status, reason, headers, data) = self.rosrs.getROResource(
+        (status, reason, headers, uri, data) = self.rosrs.getROResource(
             "test/path", rouri)
         self.assertEqual(status, 200)
         # Delete resource
@@ -232,7 +232,7 @@ class TestROSRS_Session(unittest.TestCase):
             rouri, "test/path", ctype="text/plain", body=rescontent)
         self.assertEqual(status, 201)
         # GET content
-        (status, reason, headers, data) = self.rosrs.getROResource(
+        (status, reason, headers, uri, data) = self.rosrs.getROResource(
             "test/path", rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")
@@ -258,7 +258,7 @@ class TestROSRS_Session(unittest.TestCase):
             rouri, "test/file1.rdf", ctype="application/rdf+xml", body=rescontent)
         self.assertEqual(status, 201)
         # Get resource content
-        (status, reason, headers, graph)= self.rosrs.getROResourceRDF(
+        (status, reason, headers, uri, graph)= self.rosrs.getROResourceRDF(
             "test/file1.rdf", rouri=rouri)
         self.assertEqual(status, 200)
         self.assertEqual(reason, "OK")

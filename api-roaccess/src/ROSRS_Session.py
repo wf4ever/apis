@@ -643,13 +643,14 @@ class ROSRS_Session(object):
         """
         # Retrieve annotation for given annotation URI
         """
-        (status, reason, headers, anngr) = self.getROResourceRDF(annuri)
-        bodyuri = anngr.value(subject=annuri, predicate=AO.body)
-        return bodyuri
-        #if status != 303:
-        #    raise self.error("No redirect from annnotation URI",
-        #        "%03d %s (%s)"%(status, reason, str(rouri)))
-        #return rdflib.URIRef(headers['location'])
+        #(status, reason, headers, uri, anngr) = self.getROResourceRDF(annuri)
+        #bodyuri = anngr.value(subject=annuri, predicate=AO.body)
+        #return bodyuri
+        (status, reason, headers, anngr) = self.doRequestRDF(annuri)
+        if status != 303:
+            raise self.error("No redirect from annnotation URI",
+                "%03d %s (%s)"%(status, reason, str(rouri)))
+        return rdflib.URIRef(headers['location'])
 
     def getROAnnotationGraph(self, rouri, resuri=None):
         """
