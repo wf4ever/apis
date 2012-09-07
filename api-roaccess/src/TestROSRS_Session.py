@@ -180,7 +180,7 @@ class TestROSRS_Session(unittest.TestCase):
         self.assertEqual(status, 204)
         self.assertEqual(reason, "No Content")
         # Check that resource is no longer available
-        (status, reason, headers, data) = self.rosrs.getROResource(resuri)
+        (status, reason, headers, uri, data) = self.rosrs.getROResource(resuri)
         self.assertEqual(status, 404)
         return
 
