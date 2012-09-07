@@ -757,7 +757,7 @@ class TestApi_ROSRS(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
         proxyuri = rdflib.URIRef(headers["location"])
-        links    = self.parseLinks(headers)
+        links    = self.rosrs.parseLinks(headers)
         if str(ORE.proxyFor) not in links:
             raise self.error("No ore:proxyFor link in create proxy response",
                             "Proxy URI %s"%str(proxyuri))
@@ -776,7 +776,7 @@ class TestApi_ROSRS(unittest.TestCase):
               </rdf:Description>
             </rdf:RDF>
             """%(str(rouri))
-        (status, reason, headers, data) = self.doRequest(annbodyuri,
+        (status, reason, headers, data) = self.rosrs.doRequest(annbodyuri,
             method="PUT", ctype="application/rdf+xml", body=annbody)
         self.assertEqual(status, 201)
         self.assertEqual(reason, "Created")
