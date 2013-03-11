@@ -225,6 +225,30 @@ This use of a @minim:ContentMatchRequirementRule@ uses the SPARQL query as a pro
   </minim:Requirement>
 </code></pre>
 
+h4. Liveness testing
+
+To test for liveness of a resource, the evaluator will need to attempt to access the resource.  If it is a local file, a file existence check should suffice.  If it is a web resource, then a success response to an HTTP HEAD request is expected.
+
+<pre><code>  <!-- Workflow descriptions must be accessible (live) -->
+  <minim:Requirement rdf:about="#workflows_accessible">
+    <minim:isDerivedBy>
+      <minim:ContentMatchRequirementRule>
+        <minim:forall>
+          ?wf rdf:type wfdesc:Workflow .
+        </minim:forall>
+        <minim:isLiveTemplate>
+          {+wf}
+        </minim:isLiveTemplate>
+        <minim:showpass>All declared workflow descriptions are accessible</minim:showpass>
+        <minim:showfail>Workflow description %(wf)s is not accessible</minim:showfail>
+        <minim:derives rdf:resource="#workflows_accessible" />
+      </minim:ContentMatchRequirementRule>
+    </minim:isDerivedBy>
+  </minim:Requirement>
+</code></pre>
+
+This varies from the simple aggregation test in that the @minim::aggregatesTemplate@ property is replaced by a @minim:isLiveTemplate@ property.
+
 h4. Software environment testing
 
 A @minim:SoftwareEnvironmentRule@ tests to see if a particular piece of software is available by issuing a command and checking the response against a supplied regular expression.  (This test is primarily intended for local use within RO-manager, and may be of limited use on the evaluation service as the command is issued on the host running the evaluation service, not on the host requesting the service.)
@@ -255,22 +279,6 @@ In viewing the proposals for liveness and integrity testing, compare with the cu
       :
   </minim:ContentMatchRequirementRule>
 </code></pre>
-
-h4. Liveness testing
-
-To test for liveness of a resource, the evaluator will need to attempt to access the resource.  If it is a local file, a file existence check should suffice.  If it is a web resource, then a success response to an HTTP HEAD request is expected.
-
-<pre><code>  <minim:ContentMatchRequirementRule>
-    <minim:forall>
-      ?wf rdf:type wfdesc:Workflow ;
-          wfdesc:hasInput [ wfdesc:hasArtifact ?if ] .
-    </minim:forall>
-      <minim:accessTemplate>{+if}</minim:accessTemplate>
-      :
-  </minim:ContentMatchRequirementRule>
-</code></pre>
-
-This varies from the simple aggregation test in that the @minim::aggregatesTemplate@ property is replaced by a @minim:accessTemplate@ property.
 
 h4. Integrity testing
 
